@@ -5438,7 +5438,7 @@ function applyEdits(){ maps=C.buildMaps(BASE,edits); document.querySelectorAll('
 const M = window.Cmp;
 const cmpFiles = { macho:{}, gourmet:{}, smartfood:{} };
 let cmpCo = 'macho', cmpRes = null, cmpFocus = null;
-function setCo(co){ if(co!==cmpCo){ cmpFocus=null; cmpOpen=new Set(); } cmpCo=co; for(const c of ['macho','gourmet','smartfood']) $('#cmp-co-'+c).setAttribute('aria-checked', String(c===co)); renderCmp(); if(typeof mcLoad==='function') mcLoad(); }
+function setCo(co){ if(co!==cmpCo){ cmpFocus=null; cmpOpen=new Set(); mcAuto=true; } cmpCo=co; for(const c of ['macho','gourmet','smartfood']) $('#cmp-co-'+c).setAttribute('aria-checked', String(c===co)); renderCmp(); if(typeof mcLoad==='function') mcLoad(); }
 $('#cmp-co-macho').onclick=()=>setCo('macho'); $('#cmp-co-gourmet').onclick=()=>setCo('gourmet'); $('#cmp-co-smartfood').onclick=()=>setCo('smartfood');
 $('#cmpOnlyDiff').onchange=()=>renderCmp();
 let cmpMsg=null, cmpFresh=new Set();
@@ -5750,8 +5750,13 @@ const MC_ROWS = co => co==='smartfood' ? [
 ];
 const TYPES=[{k:'tax',label:'세금계산서 (과세)'},{k:'free',label:'계산서 (면세)'}];
 let mc={month:'', data:null, saved:null, dirty:false, list:[], memos:{}};
-(function(){ const d=new Date(); $('#mcMonth').value=d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0'); })();
-$('#mcMonth').addEventListener('change',()=>mcLoad());
+/* 마감월: 마지막으로 저장한 달의 다음 달. 저장한 적이 없으면 지난달. 저장 전에는 달이 바뀌어도 그대로 */
+let mcAuto=true;
+const ymAdd=(ym,n)=>{ const [y,m]=ym.split('-').map(Number); const d=new Date(y,m-1+n,1); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0'); };
+function mcDefault(){ const saved=(typeof mc!=='undefined'&&mc.list?mc.list:[]).filter(x=>x.co===cmpCo).map(x=>x.month).sort(); if(saved.length) return ymAdd(saved[saved.length-1],1);
+  const d=new Date(); return ymAdd(d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0'),-1); }
+$('#mcMonth').value=mcDefault();
+$('#mcMonth').addEventListener('change',()=>{ mcAuto=false; mcLoad(); });
 $('#sub-btn-cmp').onclick=()=>subTab('cmp'); $('#sub-btn-month').onclick=()=>subTab('month');
 function subTab(w){ for(const t of ['cmp','month']){ $('#sub-btn-'+t).setAttribute('aria-selected',String(t===w)); $('#sub-'+t).hidden=t!==w; } if(w==='month') mcLoad(); }
 const mcId=()=>cmpCo+'-'+$('#mcMonth').value;
@@ -5777,6 +5782,7 @@ function applyAuto(force){
   mc.src=src; return n;
 }
 async function mcLoad(){
+  if(mcAuto) $('#mcMonth').value=mcDefault();
   if($('#sub-month').hidden) return;
   mc.month=$('#mcMonth').value; mc.data=emptyMc(); mc.saved=null; mc.dirty=false; mc.src={}; mc.memos={};
   if(db){ try{ const s=await db.doc('monthClose/'+mcId()).get(); if(s.exists){ const d=s.data(); mc.saved=d; for(const k in d.data||{}) if(mc.data[k]) mc.data[k]=d.data[k]; mc.src=d.src||{}; mc.memos=Object.assign({},d.memos||{}); } }catch(e){} }
@@ -5838,13 +5844,13 @@ function mcRender(){
     ta.addEventListener('input',()=>{ mc.memos[ta.dataset.memo]=ta.value; mc.dirty=true; ta.classList.remove('need'); mcState(); const b=$('#mcBody').querySelector(`[data-memobtn="${ta.dataset.memo}"]`); if(b){ const has=!!ta.value.trim(); b.textContent=has?'메모 있음':'메모'; b.classList.toggle('has',has); b.classList.remove('need'); } });
   });
   $('#mcList').innerHTML = mc.list.length ? `<span class="muted">저장된 월마감</span>`+mc.list.filter(x=>x.co===cmpCo).sort((a,b)=>b.month.localeCompare(a.month)).map(x=>`<button data-m="${x.month}" aria-current="${x.month===mc.month}">${x.month.replace('-','.')}</button>`).join('') : '';
-  $('#mcList').querySelectorAll('[data-m]').forEach(b=>b.onclick=()=>{ $('#mcMonth').value=b.dataset.m; mcLoad(); });
+  $('#mcList').querySelectorAll('[data-m]').forEach(b=>b.onclick=()=>{ mcAuto=false; $('#mcMonth').value=b.dataset.m; mcLoad(); });
 }
 $('#mcPull').onclick=()=>{ const n=applyAuto(true); if(n){ mc.dirty=true; toast('매장출고를 비교 자료에서 다시 채웠습니다'); } else toast(`[비교]에 ${$('#mcMonth').value.slice(5)}월 자료가 없습니다`); mcRender(); };
 $('#mcSave').onclick=async()=>{
   if(!db){ toast('저장 기능을 쓸 수 없는 화면입니다'); return; }
   const doc={co:cmpCo, month:mc.month, data:mc.data, memos:mc.memos||{}, src:mc.src||{}, savedAt:Date.now()};
-  try{ await db.doc('monthClose/'+mcId()).set(doc); mc.saved=doc; mc.dirty=false; toast(mc.month.replace('-','년 ')+'월 마감 저장됨'); mcRender(); }
+  try{ await db.doc('monthClose/'+mcId()).set(doc); mc.saved=doc; mc.dirty=false; toast(mc.month.replace('-','년 ')+'월 마감 저장됨 · 다음부터 '+Number(ymAdd(mc.month,1).slice(5))+'월이 열립니다'); mcAuto=false; mcRender(); }
   catch(e){ toast('저장하지 못했습니다'); }
 };
 $('#mcXlsx').onclick=()=>{
@@ -6402,7 +6408,7 @@ render(); renderCmp();
     db.collection('dailyDays').onSnapshot(s=>{ dl.hist=s.docs.map(d=>d.data()).filter(x=>x&&x.ship); if(!$('#view-daily').hidden) dlRenderHist(); }, ()=>{});
     db.collection('sukseongLog').onSnapshot(s=>{ ssLogs=s.docs.map(d=>Object.assign({id:d.id},d.data())).filter(x=>x&&x.ship); if(!$('#view-ss').hidden) ssRenderLog(); }, ()=>{});
     db.doc('sukseong/config').onSnapshot(s=>{ const d=s.exists&&s.data(); if(d&&Array.isArray(d.items)){ ssCfg={items:d.items, stores:d.stores||[], fixed:Object.assign({},SS_DEFAULT.fixed,d.fixed||{})}; if($('#ssSettings').dataset.dirty!=='1'){ ssLoadParsed({qty:ss.qty, items:ss.items, stores:ss.stores, od:ss.orderDate}, ss.sheet); ssRender(); } } }, ()=>{});
-    db.collection('monthClose').onSnapshot(s=>{ mc.list=s.docs.map(d=>d.data()).filter(x=>x&&x.month).map(x=>({co:x.co,month:x.month})); if(!$('#sub-month').hidden) mcRender(); }, ()=>{});
+    db.collection('monthClose').onSnapshot(s=>{ mc.list=s.docs.map(d=>d.data()).filter(x=>x&&x.month).map(x=>({co:x.co,month:x.month})); if(mcAuto&&!mc.dirty&&$('#mcMonth').value!==mcDefault()){ mcLoad(); return; } if(!$('#sub-month').hidden) mcRender(); }, ()=>{});
     db.collection('mapEdits').onSnapshot(s=>{ edits=s.docs.map(d=>d.data()).filter(Boolean).sort((a,b)=>(a.updatedAt||0)-(b.updatedAt||0)); applyEdits(); }, ()=>{});
     db.doc('config/main').onSnapshot(s=>{ const d=s.exists&&s.data(); if(d&&Array.isArray(d.machoCodes)&&d.machoCodes.length){ machoCodes=d.machoCodes; render(); if(!$('#view-map').hidden) renderMap(); } }, ()=>{});
   }
