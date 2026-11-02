@@ -7594,25 +7594,33 @@ const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,7);
 const MAIN=[
   ["req","견적요청품목","text"],["store","요청매장","text"],["requester","요청자","text"],["supplier","매입처","text"],
   ["name","제품명","text"],["spec","규격","text"],
-  ["price","매입단가","num"],["vat","VAT","sel",["별도","포함"]],["bunit","매입단위","text"],["qty","입수량","num"],["conv","환산","sel",["÷","×"]],["unit","견적단위","text"],
+  ["unit","견적단위","text"],["price","매입단가","num"],["vat","VAT","sel",["별도","포함"]],["bunit","매입단위 (다를 때만)","text"],["qty","입수량","num"],
   ["tax","면과세","sel",["과세","면세"]],["storage","보관방법","sel",["","냉동","냉장","실온"]],
   ["rate","마진율 (%)","rate"],["sale","매출가 (VAT별도)","num"],["target","타겟가 (VAT별도)","num"],["nego","협의단가 (VAT별도)","num"],
   ["note","비고 (내부)","text"],["clientNote","거래처 전달사항","text"]];
 const DETAIL=[["contact","매입처 담당자"],["pack","포장단위"],["moq","MOQ"],["origin","원산지"],["shelf","유통기한"],["lead","리드타임"],
   ["orderWay","발주방식"],["payCond","결제조건"],["dcAddr","물류센터주소"],["ship","배송방법"]];
-const blankItem=()=>({id:uid(),vat:"별도",conv:"÷",tax:"과세",storage:"",inReport:true,inClient:true});
+const blankItem=()=>({id:uid(),vat:"별도",tax:"과세",storage:"",inReport:true,inClient:true});
 const blankQuote=(client)=>({id:uid(),title:"",client:client||"",round:"10",date:today(),validity:"견적일로부터 30일",pay:"협의",delivery:"협의",special:"",items:[blankItem()],createdAt:Date.now(),updatedAt:Date.now()});
 
-function calc(it){const p=num(it.price);const base=p==null?null:(it.vat==="포함"?p/1.1:p);const qty=num(it.qty);
-  const conv=qty!=null&&qty>0&&qty!==1;const cost=base==null?null:conv?(it.conv==="×"?base*qty:base/qty):base;const sale=num(it.sale),target=num(it.target),nego=num(it.nego);
+/* 규격에서 입수량 찾기: 500g*40pk/bx → 40, 1kg x 10ea → 10, 30입 → 30 */
+function autoQty(spec){const s=String(spec||"").replace(/\s+/g,"").toLowerCase();if(!s)return null;
+  const W=/^(g|kg|mg|ml|l|cc|mm|cm|m)(?![a-z])/;let last=null;
+  for(const m of s.matchAll(/[*x×](\d+(?:\.\d+)?)/g)){const after=s.slice(m.index+m[0].length);if(!W.test(after))last=+m[1];}
+  if(last)return last;
+  const m2=s.match(/(\d+)(입|ea|개|pk|팩|봉|병|캔|구|매|ps|pcs|p)(?![a-z])/);return m2?+m2[1]:null;}
+const unorm=u=>{u=String(u||"").trim().toLowerCase();return /^(bx|box|박스|bo|cs|case|케이스)$/.test(u)?"bx":/^(ea|개|낱개|pc|pcs)$/.test(u)?"ea":u;};
+function calc(it){const p=num(it.price);const base=p==null?null:(it.vat==="포함"?p/1.1:p);
+  const diff=!!(it.bunit||"").trim()&&unorm(it.bunit)!==unorm(it.unit);const aq=autoQty(it.spec);const qty=diff?(num(it.qty)!=null?num(it.qty):aq):null;
+  const conv=qty!=null&&qty>0&&qty!==1;const cost=base==null?null:diff?(conv?base/qty:null):base;const sale=num(it.sale),target=num(it.target),nego=num(it.nego);
   const mg=v=>cost!=null&&v?(v-cost)/v:null;const final=nego!=null?nego:sale;
-  return {base,qty:conv?qty:null,convOp:it.conv==="×"?"×":"÷",cost,sale,target,nego,final,margin:mg(sale),tMargin:mg(target),nMargin:mg(nego),fMargin:mg(final),gap:final!=null&&target!=null?final-target:null};}
+  return {base,diff,aq,qtyMissing:diff&&!conv,qty:conv?qty:null,qtyAuto:diff&&num(it.qty)==null&&aq!=null,convOp:"÷",cost,sale,target,nego,final,margin:mg(sale),tMargin:mg(target),nMargin:mg(nego),fMargin:mg(final),gap:final!=null&&target!=null?final-target:null};}
 /* 요청매장·요청자는 비우면 윗줄 값을 이어받음 */
 function withInherit(items){let st="",rq="";return items.map(it=>{st=it.store||st;rq=it.requester||rq;return Object.assign({},it,{_store:it.store||st,_req:it.requester||rq},calc(it));});}
 const named=it=>(it.name||"").trim()!=="";
 function saleFromRate(it,round){const c=calc(it);const m=num(it.rate);if(c.cost==null||m==null||m>=100)return null;
   const raw=c.cost/(1-m/100);const u=+(round||10);return u>1?Math.ceil(raw/u-1e-9)*u:Math.round(raw);}
-const convText=c=>c.qty?`${won(c.base)} ${c.convOp} ${c.qty.toLocaleString("ko-KR")}`:"";
+const convText=c=>c.qty?`${won(c.base)} ÷ ${c.qty.toLocaleString("ko-KR")}${c.qtyAuto?" (규격)":""}`:"";
 function stats(items){const r=withInherit(items).filter(named);const rep=r.filter(x=>x.inReport),cli=r.filter(x=>x.inClient);
   const ms=rep.map(x=>x.fMargin).filter(v=>v!=null),ts=rep.map(x=>x.tMargin).filter(v=>v!=null);
   return {all:r,rep,cli,avg:ms.length?ms.reduce((a,b)=>a+b,0)/ms.length:null,tavg:ts.length?ts.reduce((a,b)=>a+b,0)/ts.length:null,
@@ -7723,11 +7731,13 @@ function field(it,f,inh){const [k,l,t,opts]=f;let v=it[k]==null?"":it[k];
   const ph=k==="store"&&!v&&inh._store?inh._store:k==="requester"&&!v&&inh._req?inh._req:"";
   const cls=t==="num"?" class=\"n\"":"";
   if(t==="sel")return `<label class="qf q-${k}"><span>${l}</span><select data-k="${k}">${opts.map(o=>`<option value="${o}"${o===v?" selected":""}>${o||"선택"}</option>`).join("")}</select></label>`;
+  if(k==="qty"&&!v){const a=autoQty(it.spec);const d=!!(it.bunit||"").trim()&&unorm(it.bunit)!==unorm(it.unit);
+    return `<label class="qf q-qty"><span>${l}</span><input type="text" class="n" data-k="qty" value="" inputmode="decimal" placeholder="${d?(a!=null?"규격에서 "+a:"직접 입력"):"단위 같으면 비움"}"></label>`;}
   return `<label class="qf q-${k}"><span>${l}</span><input type="text"${cls} data-k="${k}" value="${esc(t==="num"&&v!==""&&num(v)!=null?num(v).toLocaleString("ko-KR"):v)}"${ph?` placeholder="${esc(ph)} (윗줄)"`:""}${t==="num"?' inputmode="decimal"':""}></label>`;}
 function calcHtml(c){
   const gapCls=c.gap==null?"":c.gap>0?"warn":"ok";
   return `<div class="qcalc">
-    <div><span>매입가 (견적단위·VAT별도)</span><b>${won(c.cost)}</b>${c.qty?`<i>${convText(c)}</i>`:""}</div>
+    <div class="${c.qtyMissing?"warn":""}"><span>매입가 (견적단위·VAT별도)</span><b>${c.qtyMissing?"입수량 필요":won(c.cost)}</b>${c.qty?`<i>${convText(c)}</i>`:c.qtyMissing?"<i>규격에서 입수량을 못 찾았어요</i>":""}</div>
     <div><span>마진율</span><b class="${c.margin!=null&&c.margin<0?"neg":""}">${pct(c.margin)}</b></div>
     <div><span>타겟가 마진율</span><b class="${c.tMargin!=null&&c.tMargin<0?"neg":""}">${pct(c.tMargin)}</b></div>
     <div class="${c.nego!=null?"nego":""}"><span>협의단가 마진율</span><b class="${c.nMargin!=null&&c.nMargin<0?"neg":""}">${pct(c.nMargin)}</b></div>
@@ -7758,7 +7768,8 @@ function renderItems(){
         if(k==="rate"){it.rate=inp.value.replace(/[^\d.\-]/g,"");it.saleBy="rate";syncSale();}
         else{it[k]=isNum?inp.value.replace(/[^\d.\-]/g,""):inp.value;
           if(k==="sale"){it.saleBy="sale";syncRate();}
-          else if(["price","vat","qty","conv"].includes(k)){if(it.saleBy==="rate"&&num(it.rate)!=null)syncSale();else syncRate();}}
+          if(["spec","bunit","unit"].includes(k)&&!num(it.qty)){const el=sec.querySelector('[data-k="qty"]');if(el){const a=autoQty(it.spec);const d=!!(it.bunit||"").trim()&&unorm(it.bunit)!==unorm(it.unit);el.placeholder=d?(a!=null?"규격에서 "+a:"직접 입력"):"단위 같으면 비움";}}
+          else if(["price","vat","qty","bunit","unit","spec"].includes(k)){if(it.saleBy==="rate"&&num(it.rate)!=null)syncSale();else syncRate();}}
         save();
         const c=calc(it);const box=sec.querySelector(".qcalc");box.outerHTML=calcHtml(c);
         if(k==="name")sec.querySelector(".qitem-h b").textContent=it.name||"제품명 미입력",sec.classList.toggle("empty",!named(it));});
