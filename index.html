@@ -4304,6 +4304,13 @@ button{cursor:pointer}
 .task{display:grid;grid-template-columns:22px minmax(0,1fr) 128px;gap:0 10px;padding:8px 14px;align-items:start}
 .task:hover{background:var(--surface-2)}
 .task.editing{background:var(--surface-2)}
+/* 완료된 업무: 작고 흐리게 (마우스를 올리면 또렷하게) */
+.task.is-done .ttl{font-size:12.5px;font-weight:500;color:var(--muted)}
+.task.is-done .ttl::before{content:"✓ ";color:var(--done);font-weight:700}
+.task.is-done .subs,.task.is-done .memo,.task.is-done .helpers{opacity:.5;font-size:12px}
+.task.is-done .num,.task.is-done .dc .ro{color:var(--faint)}
+.task.is-done .ctrl{opacity:.65}
+.task.is-done:hover .subs,.task.is-done:hover .memo,.task.is-done:hover .helpers,.task.is-done:hover .ctrl,.task.is-done:focus-within .ctrl{opacity:1}
 .num{font-family:var(--f-mono);font-size:12.5px;color:var(--faint);padding-top:1px;text-align:right}
 .tb{min-width:0;display:flex;flex-direction:column;gap:3px}
 .ttl{font-size:13.5px;font-weight:600;white-space:pre-wrap;word-break:keep-all;overflow-wrap:anywhere;border-radius:4px}
@@ -6644,7 +6651,7 @@ function taskHTML(t0, i, side, editable, rep) {
     : `<label>비고</label><span class="ro note">${esc(t.note || "금주 이월")}</span>`;
   else dc = editable ? L("예정일", { id: `du-${t.id}`, html: `<input type="date" id="du-${esc(t.id)}" data-act="due" data-id="${esc(t.id)}" value="${esc(t.dueDate || "")}">` })
     : `<label>예정일</label><span class="ro${t.dueDate ? "" : " muted"}">${t.dueDate ? md(t.dueDate) : "—"}</span>`;
-  return `<div class="task${editing ? " editing" : ""}"><span class="num">${i + 1}.</span><div class="tb">${body}</div><div class="dc">${dc}</div></div>`;
+  return `<div class="task${editing ? " editing" : ""}${done && !editing ? " is-done" : ""}"><span class="num">${i + 1}.</span><div class="tb">${body}</div><div class="dc">${dc}</div></div>`;
 }
 function countsHTML(cur) {
   const c = { new: 0, progress: 0, done: 0 }; cur.forEach(t => c[t.status] = (c[t.status] || 0) + 1);
