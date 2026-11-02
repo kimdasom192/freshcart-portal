@@ -1,0 +1,71 @@
+rules_version = '2';
+// 프레시카트 업무 포털 보안 규칙
+// 사용자·권한 화면에서 체크한 메뉴의 자료만 읽고 쓸 수 있습니다.
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() { return request.auth != null; }
+    function me() { return get(/databases/$(database)/documents/users/$(request.auth.uid)).data; }
+    function active() {
+      return signedIn()
+        && exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        && me().active == true;
+    }
+    function isAdmin() {
+      return signedIn()
+        && (request.auth.uid == 'TYzS4lm9ndcw7YmctkWoYHQCf4B3' || (active() && me().role == 'admin'));
+    }
+    function hasAny(ms) { return isAdmin() || (active() && me().menus.hasAny(ms)); }
+    function closeUser() { return hasAny(['close.run', 'close.cmp', 'close.ss', 'close.daily', 'close.map']); }
+    function ownPid(pid) { return active() && me().pid == pid; }
+
+    // 사람과 메뉴 권한: 관리자만 바꿈
+    match /users/{uid} {
+      allow read: if isAdmin() || request.auth.uid == uid || active();
+      allow write: if isAdmin();
+    }
+
+    // 재고·마진 (매입단가가 들어 있는 마진율 자료는 마진 관련 메뉴가 있어야 열림)
+    match /margin/{d} { allow read, write: if hasAny(['margin', 'uni', 'rep']); }
+    match /periods/{d} {
+      allow read: if hasAny(['slow', 'uni']);
+      allow write: if hasAny(['uni']);
+    }
+    match /stores/{d} {
+      allow read: if hasAny(['slow', 'uni']);
+      allow write: if hasAny(['uni']);
+    }
+    match /config/{d} {
+      allow read: if active() || isAdmin();
+      allow write: if hasAny(['uni']);
+    }
+    match /config/main { allow write: if closeUser(); }
+
+    // 마감 업로드
+    match /appdata/{d} {
+      allow read: if active() || isAdmin();
+      allow write: if isAdmin();
+    }
+    match /cmpSlots/{d} { allow read, write: if closeUser(); }
+    match /mapEdits/{d} { allow read, write: if closeUser(); }
+    match /daily/{d} { allow read, write: if closeUser(); }
+    match /sukseong/{d} { allow read, write: if closeUser(); }
+    match /dailyDays/{rest=**} { allow read, write: if closeUser(); }
+    match /monthClose/{rest=**} { allow read, write: if closeUser(); }
+    match /sukseongLog/{rest=**} { allow read, write: if closeUser(); }
+    match /blobs/{rest=**} { allow read, write: if closeUser(); }
+
+    // 업무일지: 모두 읽고, 내 기록만 씀
+    match /logs/{pid} {
+      allow read: if hasAny(['log']);
+      allow write: if isAdmin() || (hasAny(['log']) && ownPid(pid));
+    }
+    match /logs/{pid}/{rest=**} {
+      allow read: if hasAny(['log']);
+      allow write: if isAdmin() || (hasAny(['log']) && ownPid(pid));
+    }
+    match /notes/{n} { allow read, write: if hasAny(['log']); }
+
+    // 나만 보는 자료 (업무확인 체크리스트 등)
+    match /data/users/{pid}/{rest=**} { allow read, write: if ownPid(pid); }
+  }
+}
