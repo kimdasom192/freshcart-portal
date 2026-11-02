@@ -4376,7 +4376,8 @@ span.ck{cursor:default}
 .tl:hover{color:var(--ink);background:var(--surface)}
 .tl.cm-on{color:var(--forest);font-weight:600}
 .del{opacity:0}
-.task:hover .del,.del:focus-visible,.del.arm{opacity:1}
+.task:hover .del,.td:hover .del,.td:focus-within .del,.del:focus-visible,.del.arm{opacity:1}
+@media (hover:none){.del{opacity:1}}
 .del.arm{color:var(--danger);font-weight:600}
 .dc{display:flex;flex-direction:column;gap:2px;min-width:0}
 .dc label{font-size:10.5px;color:var(--faint);letter-spacing:.04em}
