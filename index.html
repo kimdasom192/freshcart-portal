@@ -4600,7 +4600,7 @@ span.ck{cursor:default}
 /* 마감 업로드 변환 핵심 로직 — 브라우저/Node 공용 */
 (function (root) {
   const COS = {
-    hanok:      { label: '한옥집',   code: 4858800607, memo: null,        fileTag: '한옥집' },
+    hanok:      { label: '한옥집',   code: 4858800607, memo: null,        fileTag: '한옥집', wh: 400 },  // 한옥집은 400 3PL 창고
     saengmacha: { label: '생마차',   code: 7858802771, memo: '생마차전표', fileTag: '생마차' },
     taeto:      { label: '태토',     code: 7858802771, memo: '태토전표',   fileTag: '태토' },
     macho:      { label: '마초',     code: 7858802771, memo: '마초전표',   fileTag: '마초' },
@@ -4730,7 +4730,7 @@ span.ck{cursor:default}
   /* 업체별 업로드 행 만들기 → {rows, missing, total} */
   function convert(co, src, maps, date) {
     const C = COS[co], rows = [], missing = [];
-    const base = (code, name, spec, qty, price, sup, vat, memo) => [date, null, C.code, null, null, 100, null, null, null, code, name, spec || null, qty, clean(price), null, clean(sup), clean(vat), memo, null];
+    const base = (code, name, spec, qty, price, sup, vat, memo) => [date, null, C.code, null, null, C.wh || 100, null, null, null, code, name, spec || null, qty, clean(price), null, clean(sup), clean(vat), memo, null];
     if (co === 'hanok') {
       let vanSum = 0;
       for (const r of src) {
