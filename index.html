@@ -242,6 +242,17 @@ button,input,select{font:inherit;color:inherit}
 .qcalc .fin{background:var(--forest-soft)}
 .q-nego input{border-color:color-mix(in srgb,var(--warn) 55%,var(--line))}
 .paper td.ng{font-weight:700}
+.qcalc i{font-style:normal;font-size:10.5px;color:var(--muted);font-family:var(--f-num)}
+.q-rate input{border-color:color-mix(in srgb,var(--forest) 45%,var(--line))}
+.qgrp{display:flex;flex-direction:column;gap:2px}
+.qgrp+.qgrp{margin-top:8px;padding-top:8px;border-top:1px solid var(--line)}
+.qgrp ul{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:2px}
+.qgh{display:flex;align-items:center;gap:6px;padding:0 4px 2px 10px}
+.qgh b{font-size:12px;font-weight:700;color:var(--forest);letter-spacing:.02em;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.qgh span{font-size:11px;color:var(--muted)}
+.qplus{border:1px solid var(--line);background:var(--surface);color:var(--forest);border-radius:6px;width:22px;height:22px;font-weight:700;cursor:pointer;line-height:1}
+.qplus:hover{border-color:var(--forest)}
+.paper td.r small{display:block;font-size:9.5px;color:var(--paper-muted);font-weight:400}
 
 /* 통합 메뉴 띠 */
 .hub{background:var(--sunk);border-bottom:1px solid var(--line)}
@@ -7582,21 +7593,26 @@ const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,7);
 /* 품목 칸: 기본 칸 + 상세 칸 */
 const MAIN=[
   ["req","견적요청품목","text"],["store","요청매장","text"],["requester","요청자","text"],["supplier","매입처","text"],
-  ["name","제품명","text"],["spec","규격","text"],["unit","단위","text"],
-  ["price","단가","num"],["vat","VAT","sel",["별도","포함"]],["tax","면과세","sel",["과세","면세"]],["storage","보관방법","sel",["","냉동","냉장","실온"]],
-  ["sale","매출가 (VAT별도)","num"],["target","타겟가 (VAT별도)","num"],["nego","협의단가 (VAT별도)","num"],
+  ["name","제품명","text"],["spec","규격","text"],
+  ["price","매입단가","num"],["vat","VAT","sel",["별도","포함"]],["bunit","매입단위","text"],["qty","입수량","num"],["conv","환산","sel",["÷","×"]],["unit","견적단위","text"],
+  ["tax","면과세","sel",["과세","면세"]],["storage","보관방법","sel",["","냉동","냉장","실온"]],
+  ["rate","마진율 (%)","rate"],["sale","매출가 (VAT별도)","num"],["target","타겟가 (VAT별도)","num"],["nego","협의단가 (VAT별도)","num"],
   ["note","비고 (내부)","text"],["clientNote","거래처 전달사항","text"]];
 const DETAIL=[["contact","매입처 담당자"],["pack","포장단위"],["moq","MOQ"],["origin","원산지"],["shelf","유통기한"],["lead","리드타임"],
   ["orderWay","발주방식"],["payCond","결제조건"],["dcAddr","물류센터주소"],["ship","배송방법"]];
-const blankItem=()=>({id:uid(),vat:"별도",tax:"과세",storage:"",inReport:true,inClient:true});
-const blankQuote=()=>({id:uid(),title:"",client:"",date:today(),validity:"견적일로부터 30일",pay:"협의",delivery:"협의",special:"",items:[blankItem()],createdAt:Date.now(),updatedAt:Date.now()});
+const blankItem=()=>({id:uid(),vat:"별도",conv:"÷",tax:"과세",storage:"",inReport:true,inClient:true});
+const blankQuote=(client)=>({id:uid(),title:"",client:client||"",round:"10",date:today(),validity:"견적일로부터 30일",pay:"협의",delivery:"협의",special:"",items:[blankItem()],createdAt:Date.now(),updatedAt:Date.now()});
 
-function calc(it){const p=num(it.price);const cost=p==null?null:(it.vat==="포함"?p/1.1:p);const sale=num(it.sale),target=num(it.target),nego=num(it.nego);
+function calc(it){const p=num(it.price);const base=p==null?null:(it.vat==="포함"?p/1.1:p);const qty=num(it.qty);
+  const conv=qty!=null&&qty>0&&qty!==1;const cost=base==null?null:conv?(it.conv==="×"?base*qty:base/qty):base;const sale=num(it.sale),target=num(it.target),nego=num(it.nego);
   const mg=v=>cost!=null&&v?(v-cost)/v:null;const final=nego!=null?nego:sale;
-  return {cost,sale,target,nego,final,margin:mg(sale),tMargin:mg(target),nMargin:mg(nego),fMargin:mg(final),gap:final!=null&&target!=null?final-target:null};}
+  return {base,qty:conv?qty:null,convOp:it.conv==="×"?"×":"÷",cost,sale,target,nego,final,margin:mg(sale),tMargin:mg(target),nMargin:mg(nego),fMargin:mg(final),gap:final!=null&&target!=null?final-target:null};}
 /* 요청매장·요청자는 비우면 윗줄 값을 이어받음 */
 function withInherit(items){let st="",rq="";return items.map(it=>{st=it.store||st;rq=it.requester||rq;return Object.assign({},it,{_store:it.store||st,_req:it.requester||rq},calc(it));});}
 const named=it=>(it.name||"").trim()!=="";
+function saleFromRate(it,round){const c=calc(it);const m=num(it.rate);if(c.cost==null||m==null||m>=100)return null;
+  const raw=c.cost/(1-m/100);const u=+(round||10);return u>1?Math.ceil(raw/u-1e-9)*u:Math.round(raw);}
+const convText=c=>c.qty?`${won(c.base)} ${c.convOp} ${c.qty.toLocaleString("ko-KR")}`:"";
 function stats(items){const r=withInherit(items).filter(named);const rep=r.filter(x=>x.inReport),cli=r.filter(x=>x.inClient);
   const ms=rep.map(x=>x.fMargin).filter(v=>v!=null),ts=rep.map(x=>x.tMargin).filter(v=>v!=null);
   return {all:r,rep,cli,avg:ms.length?ms.reduce((a,b)=>a+b,0)/ms.length:null,tavg:ts.length?ts.reduce((a,b)=>a+b,0)/ts.length:null,
@@ -7630,22 +7646,30 @@ function shell(){
     <div class="qgrid">
       <aside class="qside panel2">
         <button class="btn primary" type="button" id="qNew">새 견적</button>
-        <input type="search" id="qFind" class="sel" placeholder="거래처·품목 검색" aria-label="견적 검색">
+        <input type="search" id="qFind" class="sel" placeholder="제목·거래처·품목 검색" aria-label="견적 검색">
+        <select id="qClientSel" class="sel" aria-label="거래처 고르기"></select>
         <ul class="qlist" id="qList"></ul>
       </aside>
       <div class="qmain" id="qMain"></div>
     </div></div>`;
-  $("qNew").onclick=()=>{flush();Q.cur=blankQuote();Q.tab="items";Q.delAsk=false;render();save(true);setTimeout(()=>{const c=$("qClient");if(c)c.focus();},50);};
+  $("qNew").onclick=()=>{flush();Q.cur=blankQuote(Q.cf);Q.tab="items";Q.delAsk=false;render();save(true);setTimeout(()=>{const c=$("qClient");if(c)c.focus();},50);};
   $("qFind").oninput=e=>{Q.q=e.target.value.trim();renderList();};
+  $("qClientSel").onchange=e=>{Q.cf=e.target.value;renderList();};
 }
 function flush(){if(Q.dirty){clearTimeout(Q.timer);save(true);}}
+const clients=()=>[...new Set(Q.list.map(x=>(x.client||"").trim()).filter(Boolean))].sort((a,b)=>a.localeCompare(b,"ko"));
 function renderList(){
   const ul=$("qList");if(!ul)return;const k=Q.q.toLowerCase();
-  const L=Q.list.filter(x=>!k||[x.client,x.title,...(x.items||[]).map(i=>i.name)].join(" ").toLowerCase().includes(k));
-  ul.innerHTML=L.length?L.map(x=>{const n=(x.items||[]).filter(named).length;return `<li><button type="button" data-q="${esc(x.id)}"${Q.cur&&Q.cur.id===x.id?' aria-current="true"':""}>
-    <b>${esc(x.client||x.title||"수신처 미정")}</b><span>${esc(x.title&&x.client?x.title+" · ":"")}${esc(kdate(x.date))} · ${n}품목</span></button></li>`;}).join("")
-    :`<li class="qempty">${Q.q?"찾는 견적이 없습니다.":"아직 저장된 견적이 없습니다. 새 견적을 눌러 시작하세요."}</li>`;
+  const sel=$("qClientSel");if(sel){const cs=clients();if(Q.cf&&!cs.includes(Q.cf))Q.cf="";
+    sel.innerHTML=`<option value="">전체 거래처 (${Q.list.length})</option>`+cs.map(c=>`<option value="${esc(c)}"${Q.cf===c?" selected":""}>${esc(c)} (${Q.list.filter(x=>(x.client||"").trim()===c).length})</option>`).join("");}
+  const L=Q.list.filter(x=>(!Q.cf||(x.client||"").trim()===Q.cf)&&(!k||[x.client,x.title,x.special,...(x.items||[]).flatMap(i=>[i.name,i.req,i.store,i.requester,i.supplier])].join(" ").toLowerCase().includes(k)));
+  const groups=new Map();for(const x of L){const c=(x.client||"").trim()||"거래처 미정";if(!groups.has(c))groups.set(c,[]);groups.get(c).push(x);}
+  ul.innerHTML=L.length?[...groups].map(([c,xs])=>`<li class="qgrp"><div class="qgh"><b>${esc(c)}</b><span>${xs.length}건</span><button type="button" class="qplus" data-newfor="${esc(c==="거래처 미정"?"":c)}" aria-label="${esc(c)} 새 견적" title="이 거래처로 새 견적">+</button></div>
+    <ul>${xs.map(x=>{const n=(x.items||[]).filter(named).length;return `<li><button type="button" data-q="${esc(x.id)}"${Q.cur&&Q.cur.id===x.id?' aria-current="true"':""}>
+      <b>${esc(x.title||"제목 없음")}</b><span>${esc(kdate(x.date))} · ${n}품목</span></button></li>`;}).join("")}</ul></li>`).join("")
+    :`<li class="qempty">${Q.q||Q.cf?"찾는 견적이 없습니다.":"아직 저장된 견적이 없습니다. 새 견적을 눌러 시작하세요."}</li>`;
   ul.querySelectorAll("[data-q]").forEach(b=>b.onclick=()=>{flush();const x=Q.list.find(y=>y.id===b.dataset.q);if(x){Q.cur=JSON.parse(JSON.stringify(x));Q.delAsk=false;render();renderList();}});
+  ul.querySelectorAll("[data-newfor]").forEach(b=>b.onclick=()=>{flush();Q.cur=blankQuote(b.dataset.newfor);Q.tab="items";Q.delAsk=false;render();save(true);setTimeout(()=>{const t=$("qTitle");if(t)t.focus();},50);});
 }
 function render(){
   const m=$("qMain");if(!m)return;
@@ -7654,12 +7678,14 @@ function render(){
   m.innerHTML=`<div class="panel2">
       <div class="qhead"><h2>기본 정보</h2><span class="qsave" id="qSave">${Q.savedAt?"저장됨 · "+Q.savedAt.toTimeString().slice(0,5):"자동 저장"}</span></div>
       <div class="qinfo">
-        <label class="f">수신 (업체명)<input type="text" id="qClient" value="${esc(q.client)}" placeholder="예: 주식회사 스웩베리"></label>
-        <label class="f">견적명 (내부 구분용)<input type="text" id="qTitle" value="${esc(q.title)}" placeholder="예: 11월 신규 소스류"></label>
+        <label class="f">거래처 (수신)<input type="text" id="qClient" value="${esc(q.client)}" placeholder="예: 주식회사 스웩베리" list="qClients"></label>
+        <label class="f">제목 (목록·검색용)<input type="text" id="qTitle" value="${esc(q.title)}" placeholder="예: 11월 신규 소스류 요청"></label>
+        <datalist id="qClients">${clients().map(c=>`<option value="${esc(c)}"></option>`).join("")}</datalist>
         <label class="f">견적일자<input type="date" id="qDate" value="${esc(q.date)}"></label>
         <label class="f">유효기간<input type="text" id="qValid" value="${esc(q.validity)}"></label>
         <label class="f">결제조건<input type="text" id="qPay" value="${esc(q.pay)}"></label>
         <label class="f">납품조건<input type="text" id="qDeliv" value="${esc(q.delivery)}"></label>
+        <label class="f">마진율로 매출가 계산 시<select id="qRound"><option value="1"${q.round==="1"?" selected":""}>1원 단위</option><option value="10"${(q.round||"10")==="10"?" selected":""}>10원 단위 올림</option><option value="100"${q.round==="100"?" selected":""}>100원 단위 올림</option></select></label>
         <label class="f qwide">특이사항<textarea id="qSpecial" rows="2">${esc(q.special)}</textarea></label>
       </div>
       <div class="acts2 qtools"><button class="btn sm" type="button" id="qCopy">이 견적 복사</button>
@@ -7679,6 +7705,7 @@ function render(){
     <div id="qBody"></div>`;
   const bind=(id,key)=>{$(id).oninput=e=>{q[key]=e.target.value;save();if(key==="client"||key==="title"||key==="date")renderList();};};
   bind("qClient","client");bind("qTitle","title");bind("qDate","date");bind("qValid","validity");bind("qPay","pay");bind("qDeliv","delivery");bind("qSpecial","special");
+  $("qRound").onchange=e=>{q.round=e.target.value;q.items.forEach(it=>{if(it.saleBy==="rate"){const v=saleFromRate(it,q.round);if(v!=null)it.sale=String(v);}});save();if(Q.tab==="items")renderItems();};
   m.querySelectorAll("[data-tab]").forEach(b=>b.onclick=()=>{Q.tab=b.dataset.tab;render();});
   $("qCopy").onclick=()=>{flush();const c=JSON.parse(JSON.stringify(q));c.id=uid();c.title=(q.title||q.client||"견적")+" (복사)";c.date=today();c.createdAt=Date.now();c.items.forEach(i=>i.id=uid());Q.cur=c;render();save(true);toast("견적을 복사했습니다");};
   const d=$("qDel");if(d)d.onclick=()=>{Q.delAsk=true;render();};
@@ -7690,7 +7717,9 @@ function render(){
 }
 
 /* 품목 입력 */
-function field(it,f,inh){const [k,l,t,opts]=f;const v=it[k]==null?"":it[k];
+function field(it,f,inh){const [k,l,t,opts]=f;let v=it[k]==null?"":it[k];
+  if(t==="rate"){if(it.saleBy!=="rate"||v===""){const m=calc(it).margin;v=m==null?"":(m*100).toFixed(1);}
+    return `<label class="qf q-rate"><span>${l}</span><input type="text" class="n" data-k="rate" value="${esc(v)}" inputmode="decimal" placeholder="예: 20"></label>`;}
   const ph=k==="store"&&!v&&inh._store?inh._store:k==="requester"&&!v&&inh._req?inh._req:"";
   const cls=t==="num"?" class=\"n\"":"";
   if(t==="sel")return `<label class="qf q-${k}"><span>${l}</span><select data-k="${k}">${opts.map(o=>`<option value="${o}"${o===v?" selected":""}>${o||"선택"}</option>`).join("")}</select></label>`;
@@ -7698,7 +7727,7 @@ function field(it,f,inh){const [k,l,t,opts]=f;const v=it[k]==null?"":it[k];
 function calcHtml(c){
   const gapCls=c.gap==null?"":c.gap>0?"warn":"ok";
   return `<div class="qcalc">
-    <div><span>매입가 (VAT별도)</span><b>${won(c.cost)}</b></div>
+    <div><span>매입가 (견적단위·VAT별도)</span><b>${won(c.cost)}</b>${c.qty?`<i>${convText(c)}</i>`:""}</div>
     <div><span>마진율</span><b class="${c.margin!=null&&c.margin<0?"neg":""}">${pct(c.margin)}</b></div>
     <div><span>타겟가 마진율</span><b class="${c.tMargin!=null&&c.tMargin<0?"neg":""}">${pct(c.tMargin)}</b></div>
     <div class="${c.nego!=null?"nego":""}"><span>협의단가 마진율</span><b class="${c.nMargin!=null&&c.nMargin<0?"neg":""}">${pct(c.nMargin)}</b></div>
@@ -7722,7 +7751,15 @@ function renderItems(){
   body.querySelectorAll(".qitem").forEach(sec=>{const i=+sec.dataset.i;const it=q.items[i];
     sec.querySelectorAll("[data-k]").forEach(inp=>{
       const k=inp.dataset.k;const isNum=MAIN.some(f=>f[0]===k&&f[2]==="num");
-      inp.addEventListener(inp.tagName==="SELECT"?"change":"input",()=>{it[k]=isNum?inp.value.replace(/[^\d.\-]/g,""):inp.value;save();
+      const setVal=(key,v)=>{const el=sec.querySelector(`[data-k="${key}"]`);if(el&&el!==document.activeElement)el.value=v;};
+      const syncSale=()=>{const v=saleFromRate(it,q.round);if(v!=null){it.sale=String(v);setVal("sale",v.toLocaleString("ko-KR"));}};
+      const syncRate=()=>{const m=calc(it).margin;it.rate=m==null?"":(m*100).toFixed(1);setVal("rate",it.rate);};
+      inp.addEventListener(inp.tagName==="SELECT"?"change":"input",()=>{
+        if(k==="rate"){it.rate=inp.value.replace(/[^\d.\-]/g,"");it.saleBy="rate";syncSale();}
+        else{it[k]=isNum?inp.value.replace(/[^\d.\-]/g,""):inp.value;
+          if(k==="sale"){it.saleBy="sale";syncRate();}
+          else if(["price","vat","qty","conv"].includes(k)){if(it.saleBy==="rate"&&num(it.rate)!=null)syncSale();else syncRate();}}
+        save();
         const c=calc(it);const box=sec.querySelector(".qcalc");box.outerHTML=calcHtml(c);
         if(k==="name")sec.querySelector(".qitem-h b").textContent=it.name||"제품명 미입력",sec.classList.toggle("empty",!named(it));});
       if(isNum)inp.addEventListener("blur",()=>{const n=num(inp.value);inp.value=n==null?"":n.toLocaleString("ko-KR");});
@@ -7745,7 +7782,7 @@ function reportHtml(q,S){
     <table class="pt">
       <thead><tr><th>No.</th><th>매입처</th><th>품목명</th><th>규격</th><th>단위</th><th>매입가<br>(VAT별도)</th><th>매출가<br>(VAT별도)</th><th>마진율</th><th>타겟가</th><th>타겟가<br>마진율</th><th>협의단가</th><th>협의단가<br>마진율</th><th>요청매장</th><th>요청자</th><th>비고</th></tr></thead>
       <tbody>${S.rep.length?S.rep.map((x,i)=>`<tr><td class="c">${i+1}</td><td>${esc(x.supplier)}</td><td class="b">${esc(x.name)}</td><td>${esc(x.spec)}</td><td class="c">${esc(x.unit)}</td>
-        <td class="r">${won(x.cost)}</td><td class="r">${won(x.sale)}</td><td class="r">${pct(x.margin)}</td><td class="r">${won(x.target)}</td><td class="r">${pct(x.tMargin)}</td>
+        <td class="r">${won(x.cost)}${x.qty?`<small>${esc(convText(x))}${x.bunit?"/"+esc(x.bunit):""}</small>`:""}</td><td class="r">${won(x.sale)}</td><td class="r">${pct(x.margin)}</td><td class="r">${won(x.target)}</td><td class="r">${pct(x.tMargin)}</td>
         <td class="r${x.nego!=null?" ng":""}">${won(x.nego)}</td><td class="r${x.nego!=null?" ng":""}">${pct(x.nMargin)}</td><td>${esc(x._store)}</td><td>${esc(x._req)}</td><td>${esc(x.note)}</td></tr>`).join(""):`<tr><td colspan="15" class="c">보고용으로 고른 품목이 없습니다.</td></tr>`}</tbody>
     </table>
     <p class="pnote2">※ 마진율 = (단가 − 매입가) ÷ 단가, VAT 별도 기준. 협의단가가 있는 품목은 협의단가가 거래처에 제시하는 최종 단가이며, 평균 마진율도 최종 단가 기준입니다.</p>
