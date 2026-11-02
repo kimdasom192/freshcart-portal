@@ -129,6 +129,36 @@ button,input,select{font:inherit;color:inherit}
 .pnote b{color:var(--ink)}
 .ptoast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(20px + env(safe-area-inset-bottom,0px));background:var(--ink);color:var(--bg);padding:9px 16px;border-radius:999px;font-size:13.5px;z-index:60;max-width:calc(100% - 32px)}
 @media (prefers-reduced-motion:no-preference){.mcard,.today a{transition:border-color .15s,box-shadow .15s}}
+/* 홈 · 오늘 챙길 일 (업무확인·업무일지) */
+.hload{color:var(--muted);font-size:13px;margin:0}
+.hgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,300px),1fr));gap:12px;align-items:start}
+.hcard{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:14px 16px 12px;display:flex;flex-direction:column;gap:10px;min-width:0}
+.hh{display:flex;justify-content:space-between;align-items:baseline;gap:8px}
+.hh h2{margin:0;font-size:15px;font-weight:600}
+.hn{font-family:var(--f-num);font-size:12.5px;color:var(--muted);white-space:nowrap}
+.hn .late{color:var(--bad);font-weight:600}
+.hbar{height:6px;border-radius:3px;background:var(--sunk);overflow:hidden}
+.hbar span{display:block;height:100%;background:var(--forest);border-radius:3px}
+.hsub{display:flex;gap:6px;margin-top:-4px}
+.hmeet{font-size:12px;color:var(--muted)}
+.hl{list-style:none;margin:0;padding:0;display:flex;flex-direction:column}
+.hl li{display:flex;align-items:flex-start;gap:8px;padding:7px 0;border-top:1px solid var(--line);font-size:13.5px;min-width:0}
+.hl li:first-child{border-top:0;padding-top:2px}
+.ht{flex:1;min-width:0;overflow-wrap:anywhere}
+.ht small{display:block;font-size:11.5px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.hg{flex:none;font-size:11px;color:var(--muted);border:1px solid var(--line);border-radius:999px;padding:0 7px;line-height:1.7;white-space:nowrap}
+.hck{flex:none;width:14px;height:14px;margin-top:3px;border:1.5px solid var(--line);border-radius:4px}
+.hb{flex:none;font-family:var(--f-num);font-size:11px;font-weight:600;padding:1px 7px;border-radius:6px;background:var(--sunk);color:var(--muted);white-space:nowrap;margin-top:1px}
+.hb.now{background:var(--forest);color:var(--on-forest)}
+.hb.late{background:var(--bad-soft);color:var(--bad)}
+.hb.st-progress{background:var(--warn-soft);color:var(--warn)}
+.hb.st-new{background:var(--forest-soft);color:var(--forest)}
+.hempty,.hdone,.hmore{margin:0;font-size:12.5px;color:var(--muted)}
+.hdone{color:var(--forest);font-weight:600}
+.hgo{align-self:flex-end;font-size:12.5px;font-weight:600;color:var(--forest);text-decoration:none;margin-top:auto}
+.hgo:hover{text-decoration:underline;text-underline-offset:3px}
+.mcard .upd{font-size:12px;color:var(--muted)}
+.mcard .upd b{color:var(--forest);font-family:var(--f-num)}
 
 .lock-fields{display:grid;grid-template-columns:auto minmax(0,1fr);gap:8px 12px;align-items:center}
 .lock-fields label{margin:0!important}
@@ -7254,6 +7284,7 @@ function goLog(taskId, W, body) {
   render();
   setTimeout(() => { const f = document.getElementById("tf-" + taskId); if (f) f.scrollIntoView({ block: "center", behavior: "smooth" }); }, 60);
 }
+window.__logView = v => { try { setView(v); } catch (e) {} };
 function setView(v) {
   if (S.view === v) return;
   if (v === "log" && S.editing) S.editing = null;
@@ -7611,6 +7642,82 @@ render();
 })();
 
 };</script>
+<script>(function(){
+"use strict";
+/* ===== 홈 · 오늘 챙길 일: 각자의 업무확인(체크리스트·업무리스트)과 업무일지에서 모음 ===== */
+const esc=s=>String(s==null?"":s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const today=()=>new Intl.DateTimeFormat("en-CA",{timeZone:"Asia/Seoul"}).format(new Date());
+const pd=s=>{const [y,m,d]=String(s).split("-").map(Number);return new Date(Date.UTC(y,m-1,d));};
+const fd=d=>d.toISOString().slice(0,10);
+const mondayOf=s=>{const d=pd(s);d.setUTCDate(d.getUTCDate()-((d.getUTCDay()+6)%7));return fd(d);};
+const addD=(s,n)=>{const d=pd(s);d.setUTCDate(d.getUTCDate()+n);return fd(d);};
+const gap=(a,b)=>Math.round((pd(b)-pd(a))/864e5);
+const WD=["일","월","화","수","목","금","토"];
+const md=s=>{const d=pd(s);return `${d.getUTCMonth()+1}/${d.getUTCDate()}(${WD[d.getUTCDay()]})`;};
+const due=(s,td)=>{if(!s)return "";const n=gap(td,s);return n<0?`<span class="hb late">${-n}일 지남</span>`:n===0?`<span class="hb now">오늘</span>`:`<span class="hb">${n===1?"내일":"D-"+n}</span>`;};
+const ST={new:"신규",progress:"진행중"};
+const go=v=>`href="#worklog" data-wl="${v}"`;
+let seq=0;
+async function safe(p){try{return await p;}catch(e){return null;}}
+
+window.HOME={async fill(el,ctx){
+  if(!el)return;const my=++seq;const td=today(),W=mondayOf(td),wd=pd(td).getUTCDay();
+  if(!ctx.hasLog||!ctx.db){el.innerHTML="";return;}
+  el.innerHTML=`<p class="hload">오늘 챙길 일을 불러오는 중입니다…</p>`;
+  const db=ctx.db,pid=ctx.pid,lp=ctx.logPid;
+  const [day,rt,todo,tasks]=await Promise.all([
+    ctx.privateOk&&pid?safe(db.doc(`data/users/${pid}/my/days/${td}`).get()):null,
+    ctx.privateOk&&pid?safe(db.collection(`data/users/${pid}/my/routines`).get()):null,
+    ctx.privateOk&&pid?safe(db.collection(`data/users/${pid}/my/todos`).get()):null,
+    lp?safe(db.collection(`logs/${lp}/tasks`).get()):null]);
+  if(my!==seq)return;
+
+  /* 1. 오늘 체크리스트 */
+  let ck="";
+  if(ctx.privateOk){
+    let items=[];
+    if(day&&day.exists)items=(day.data().items||[]);
+    else if(rt)items=rt.docs.map(d=>Object.assign({id:d.id},d.data())).filter(r=>r.title&&(r.days||[]).includes(wd)).sort((a,b)=>(a.order||0)-(b.order||0)).map(r=>({t:r.title,g:r.group,done:false}));
+    const n=items.length,dn=items.filter(i=>i.done).length,left=items.filter(i=>!i.done);
+    ck=`<section class="hcard"><div class="hh"><h2>오늘 체크리스트</h2><span class="hn">${n?`${dn} / ${n}`:"-"}</span></div>
+      ${n?`<div class="hbar" role="img" aria-label="${n}개 중 ${dn}개 완료"><span style="width:${Math.round(dn/n*100)}%"></span></div>`:""}
+      ${!n?`<p class="hempty">오늘 반복 업무가 없습니다. 업무확인에서 요일별 반복 업무를 등록하면 매일 자동으로 생깁니다.</p>`:
+        !left.length?`<p class="hdone">오늘 체크리스트를 모두 마쳤습니다.</p>`:
+        `<ul class="hl">${left.slice(0,8).map(i=>`<li><span class="hck" aria-hidden="true"></span><span class="ht">${esc(i.t)}</span>${i.g?`<span class="hg">${esc(i.g)}</span>`:""}</li>`).join("")}</ul>${left.length>8?`<p class="hmore">외 ${left.length-8}개</p>`:""}`}
+      <a class="hgo" ${go("me")}>업무확인 열기 →</a></section>`;
+  }
+
+  /* 2. 업무리스트 (지난 것 · 오늘 · 7일 안) */
+  let tl="";
+  if(ctx.privateOk){
+    const L=(todo?todo.docs.map(d=>d.data()):[]).filter(t=>t&&!t.hidden&&!t.done&&t.date&&t.date<=addD(td,7)).sort((a,b)=>a.date.localeCompare(b.date));
+    const late=L.filter(t=>t.date<td).length,now=L.filter(t=>t.date===td).length;
+    tl=`<section class="hcard"><div class="hh"><h2>업무리스트</h2><span class="hn">${late?`<b class="late">지남 ${late}</b> · `:""}오늘 ${now}</span></div>
+      ${L.length?`<ul class="hl">${L.slice(0,8).map(t=>`<li>${due(t.date,td)}<span class="ht">${esc(t.title||"")}${t.memo?`<small>${esc(t.memo)}</small>`:""}</span>${t.cat?`<span class="hg">${esc(t.cat)}</span>`:""}</li>`).join("")}</ul>${L.length>8?`<p class="hmore">외 ${L.length-8}개</p>`:""}`
+        :`<p class="hempty">오늘부터 일주일 안에 할 업무가 없습니다.</p>`}
+      <a class="hgo" ${go("me")}>업무리스트 열기 →</a></section>`;
+  }
+
+  /* 3. 이번 주 업무일지 */
+  let lg="";
+  if(lp){
+    const T=(tasks?tasks.docs.map(d=>d.data()):[]).filter(t=>t&&t.status!=="done"&&(t.startWeek||"")<=W&&(t.title||"").trim());
+    T.sort((a,b)=>(a.dueDate?0:1)-(b.dueDate?0:1)||String(a.dueDate||"").localeCompare(String(b.dueDate||""))||(a.status==="progress"?0:1)-(b.status==="progress"?0:1));
+    const pr=T.filter(t=>t.status==="progress").length,nw=T.length-pr;
+    const meet=wd===1?`<span class="hb now">오늘 주간 회의</span>`:`<span class="hmeet">다음 회의 ${md(addD(W,7))}</span>`;
+    lg=`<section class="hcard"><div class="hh"><h2>이번 주 업무일지</h2><span class="hn">진행중 ${pr} · 신규 ${nw}</span></div>
+      <div class="hsub">${meet}</div>
+      ${T.length?`<ul class="hl">${T.slice(0,8).map(t=>`<li>${t.dueDate?due(t.dueDate,td):`<span class="hb st-${esc(t.status)}">${ST[t.status]||"신규"}</span>`}<span class="ht">${esc(t.title)}${t.category?`<small>${esc(t.category)}</small>`:""}</span></li>`).join("")}</ul>${T.length>8?`<p class="hmore">외 ${T.length-8}개</p>`:""}`
+        :`<p class="hempty">${tasks?"남은 업무가 없습니다. 이번 주 업무를 업무일지에 적어 두면 여기에 보입니다.":"업무일지를 불러오지 못했습니다."}</p>`}
+      <a class="hgo" ${go("log")}>업무일지 열기 →</a></section>`;
+  }
+
+  const note=ctx.preview?`<p class="pnote">${esc(ctx.preview)}님 화면 미리보기입니다. 업무확인 체크리스트·업무리스트는 본인만 볼 수 있어 업무일지만 보여 줍니다.</p>`:"";
+  el.innerHTML=(ck||tl||lg)?`${note}<div class="hgrid">${ck}${tl}${lg}</div>`:note;
+  el.querySelectorAll("[data-wl]").forEach(a=>a.addEventListener("click",()=>{const v=a.dataset.wl;try{localStorage.setItem("wl-view",v);}catch(e){}if(window.__logView)window.__logView(v);}));
+}};
+})();
+</script>
 <script>(function(){
 "use strict";
 /* ===== 견적서 (관리자 전용): 품목 입력 → 대표님 보고용 · 거래처 전달용 ===== */
@@ -8048,18 +8155,18 @@ function todayItems(){
 function renderHome(){
   const t=new Date();const k=keys();
   const nm=P.preview?P.preview.name:(P.owner?"":P.name);
-  const items=todayItems();
   let cards="";
   for(const g of [...GROUPS,"관리"]){const vs=VIEWS.filter(d=>d.g===g&&allowed(d.v)&&d.v!=="users");if(!vs.length)continue;
     cards+=`<section class="mgrp"><h2>${esc(g)}</h2><div class="mcards">${vs.map(d=>{
-      let sub="";if(d.v==="close")sub=`<div class="sub">${PERMS.filter(p=>p.k.startsWith("close.")&&k.has(p.k)).map(p=>`<i>${esc(p.l)}</i>`).join("")}</div>`;
+      let sub="";if(d.v==="close")sub=`<div class="sub">${PERMS.filter(p=>p.k.startsWith("close.")&&k.has(p.k)).map(p=>`<i>${esc(p.l)}</i>`).join("")}</div>${k.has("close.run")?`<span class="upd">오늘 작업분 업로드 일자 <b>${md(addD(t,t.getDay()===6?2:1))}</b></span>`:""}`;
       return `<a class="mcard" href="#${d.hash}"><b>${esc(d.l)}</b><span>${esc(d.d)}</span>${sub}<em>열기 →</em></a>`;}).join("")}</div></section>`;}
   $("pHome").innerHTML=`<div class="page">
     <div class="page-h"><small>${t.getFullYear()}년 ${t.getMonth()+1}월 ${t.getDate()}일 ${WD[t.getDay()]}요일</small>
       <h1>${nm?esc(nm)+"님, ":""}오늘 챙길 일</h1>
-      <p>업무 일정에 맞춰 오늘 할 일을 모았습니다. 누르면 해당 화면으로 이동합니다.</p></div>
-    ${items.length?`<ul class="today">${items.map(i=>`<li class="${i.now?"now":""}"><a href="#${i.h}"><span class="when">${esc(i.when)}</span><span class="t">${esc(i.t)}</span><span class="d">${esc(i.d)}</span></a></li>`).join("")}</ul>`:`<p class="pnote">아직 열린 메뉴가 없습니다. 관리자에게 메뉴를 요청해 주세요.</p>`}
+      <p>내 업무확인 체크리스트·업무리스트와 이번 주 업무일지에서 오늘 할 일을 모았습니다.</p></div>
+    <section id="hToday"></section>
     <div class="mgrid">${cards}</div></div>`;
+  if(window.HOME)window.HOME.fill(document.getElementById("hToday"),{db:FC.db,pid:FC.profile&&FC.profile.pid,logPid:P.preview?P.preview.pid:(FC.profile&&FC.profile.pid),privateOk:!P.preview,preview:P.preview&&P.preview.name,hasLog:k.has("log")});
 }
 
 
@@ -8228,7 +8335,7 @@ async function importData(file){
   $("impGo").disabled=false;
 }
 function setPreview(x){
-  P.preview=x?{name:x.name,keys:new Set(x.menus||[])}:null;
+  P.preview=x?{name:x.name,pid:x.pid||x.uid,keys:new Set(x.menus||[])}:null;
   const tabs=closeTabsOf(keys());if(window.__closeAccess&&tabs.length)window.__closeAccess(tabs,window.PORTAL.name);
   if(location.hash==="#home"||!location.hash)route();else location.hash="#home";
   if(!x)toast("관리자 화면으로 돌아왔습니다");
