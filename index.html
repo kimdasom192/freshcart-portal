@@ -5100,8 +5100,10 @@ span.ck{cursor:default}
     // 1~16호·별도차량 배송 매장 (한옥집 인천T1·T2·김포공항 제외)
     const EXCL = /인천\s*T1|인천\s*T2|김포공항/i;
     const metroStores = [...secs[0].cars, ...secs[1].cars].flatMap(g => g.stores.filter(x => x.total > 0 && !EXCL.test(x.name)).map(x => ({ car: g.car, name: x.name, total: x.total, brand: brandOf(x.name) })));
+    // 지방간선(영남·호남·제주) 배송 매장
+    const localStores = secs[2].cars.flatMap(g => g.stores.filter(x => x.total > 0).map(x => ({ car: g.car, name: x.name, total: x.total, brand: brandOf(x.name) })));
     const sideRows = [...side.entries()].map(([store, o]) => ({ store, car: o.car, 냉동: o.냉동, 냉장: o.냉장, 실온: o.실온, total: o.냉동 + o.냉장 + o.실온 }));
-    return { secs, secTot, unmatched: [...unmatched.values()].map(u => Object.assign(u, { cars: [...u.cars], files: [...u.files] })), carDiff, localGourmet, metroStores, side: sideRows, grand: secTot.reduce((a, t) => a + t.total, 0), templateCount: secs.flatMap(s => s.cars.flatMap(g => g.stores)).filter(x => x.total > 0).length - 3 };
+    return { secs, secTot, unmatched: [...unmatched.values()].map(u => Object.assign(u, { cars: [...u.cars], files: [...u.files] })), carDiff, localGourmet, metroStores, localStores, side: sideRows, grand: secTot.reduce((a, t) => a + t.total, 0), templateCount: secs.flatMap(s => s.cars.flatMap(g => g.stores)).filter(x => x.total > 0).length - 3 };
   }
 
   /* 엑셀: 원래 양식(템플릿)에 그대로 채워 넣기 */
@@ -6250,11 +6252,13 @@ function dlRender(){
   $('#dlCards').innerHTML=`<div class="dl-card"><span class="k">합계금액 (배송일 ${md2(ship)})</span><span class="v">${fmt(B.grand)}</span><span class="s">냉동 ${fmt(B.secTot.reduce((a,t)=>a+t.냉동,0))} · 냉장 ${fmt(B.secTot.reduce((a,t)=>a+t.냉장,0))} · 실온 ${fmt(B.secTot.reduce((a,t)=>a+t.실온,0))}</span></div>
     <div class="dl-card"><span class="k">1~16호차 · 별도차량</span><span class="v">${fmt(metroT)}</span><span class="s">1~4호 ${fmt(B.secTot[0].total)} · 원중운수 ${fmt(B.secTot[1].total)}</span></div>
     <div class="dl-card"><span class="k">지방간선 (영남·호남·제주)</span><span class="v">${fmt(B.secTot[2].total)}</span><span class="s">영호남 고메 ${fmt(B.localGourmet.reduce((a,g)=>a+g.total,0))}</span></div>
-    <button type="button" class="dl-card" id="dlCnt" aria-expanded="${dl.showList}"><span class="k">1~16호 배송 매장 수 (인천T1·T2·김포공항 제외)</span><span class="v">${B.metroStores.length}곳</span><span class="s">${Object.entries(B.metroStores.reduce((m,x)=>(m[x.brand]=(m[x.brand]||0)+1,m),{})).map(([b,n])=>esc(b)+' '+n).join(' · ')||'-'} · 눌러서 매장 보기</span></button>`;
-  $('#dlCnt').onclick=()=>{ dl.showList=!dl.showList; dlRender(); };
+    <button type="button" class="dl-card" id="dlCnt" aria-expanded="${dl.showList==='metro'}"><span class="k">1~16호 배송 매장 수 (인천T1·T2·김포공항 제외)</span><span class="v">${B.metroStores.length}곳</span><span class="s">${Object.entries(B.metroStores.reduce((m,x)=>(m[x.brand]=(m[x.brand]||0)+1,m),{})).map(([b,n])=>esc(b)+' '+n).join(' · ')||'-'} · 눌러서 매장 보기</span></button>
+    <button type="button" class="dl-card" id="dlCntL" aria-expanded="${dl.showList==='local'}"><span class="k">지방간선 배송 매장 수 (영남·호남·제주)</span><span class="v">${B.localStores.length}곳</span><span class="s">${Object.entries(B.localStores.reduce((m,x)=>(m[x.brand]=(m[x.brand]||0)+1,m),{})).map(([b,n])=>esc(b)+' '+n).join(' · ')||'-'} · 눌러서 매장 보기</span></button>`;
+  $('#dlCnt').onclick=()=>{ dl.showList=dl.showList==='metro'?false:'metro'; dlRender(); };
+  $('#dlCntL').onclick=()=>{ dl.showList=dl.showList==='local'?false:'local'; dlRender(); };
   const sl=$('#dlStoreList'); sl.hidden=!dl.showList;
-  if(dl.showList){ const g={}; B.metroStores.forEach(x=>(g[x.car]=g[x.car]||[]).push(x));
-    sl.innerHTML=`<div class="results-head"><h2>1~16호 배송 매장 ${B.metroStores.length}곳</h2><button class="btn sm" id="dlCntClose">닫기</button></div><div class="tbl-wrap"><table><thead><tr><th>호차</th><th class="r">매장 수</th><th>매장</th></tr></thead><tbody>${Object.keys(g).sort((a,b)=>Daily.carRank(a)-Daily.carRank(b)).map(c=>`<tr><td>${esc(c)}</td><td class="r num">${g[c].length}</td><td class="wrap">${g[c].map(x=>`${esc(x.name)} <span class="muted num">${fmt(x.total)}</span>`).join('<br>')}</td></tr>`).join('')}</tbody></table></div>`;
+  if(dl.showList){ const L=dl.showList==='local'?B.localStores:B.metroStores, title=dl.showList==='local'?'지방간선 배송 매장':'1~16호 배송 매장'; const g={}; L.forEach(x=>(g[x.car]=g[x.car]||[]).push(x));
+    sl.innerHTML=`<div class="results-head"><h2>${title} ${L.length}곳</h2><button class="btn sm" id="dlCntClose">닫기</button></div><div class="tbl-wrap"><table><thead><tr><th>호차</th><th class="r">매장 수</th><th>매장</th></tr></thead><tbody>${Object.keys(g).sort((a,b)=>Daily.carRank(a)-Daily.carRank(b)).map(c=>`<tr><td>${esc(c.replace('지방_',''))}</td><td class="r num">${g[c].length}</td><td class="wrap">${g[c].map(x=>`${esc(x.name)} <span class="muted num">${fmt(x.total)}</span>`).join('<br>')}</td></tr>`).join('')}<tr class="sub"><td>합계</td><td class="r num">${L.length}</td><td class="num">${fmt(L.reduce((a,x)=>a+x.total,0))}</td></tr></tbody></table></div>`;
     $('#dlCntClose').onclick=()=>{ dl.showList=false; dlRender(); }; }
   // 영호남 고메
   $('#dlLocal').innerHTML=`<table><thead><tr><th>지역</th><th>매장</th><th class="r">공급가액</th></tr></thead><tbody>${B.localGourmet.map(g=>`<tr class="${g.total?'':'zero'}"><td>${esc(g.car.replace('지방_',''))}</td><td>${esc(g.name)}</td><td class="r num">${g.total?fmt(g.total):'-'}</td></tr>`).join('')}<tr class="sub"><td colspan="2">합계</td><td class="r num">${fmt(B.localGourmet.reduce((a,g)=>a+g.total,0))}</td></tr></tbody></table>`;
