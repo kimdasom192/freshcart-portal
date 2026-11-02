@@ -8330,7 +8330,9 @@ async function importData(file){
     const docs=J.docs||[];let n=0;
     for(const d of docs){await FC.db.doc(d.path).set(d.data);n++;if(n%5===0||n===docs.length)msg(`옮기는 중… ${n} / ${docs.length}`);}
     if(J.appdata){await FC.db.doc("appdata/close").set(J.appdata);appLoaded=null;}
-    msg(`다 옮겼습니다 · 자료 ${docs.length}건. 새로고침하면 반영된 화면을 볼 수 있습니다.`);toast("자료를 다 옮겼습니다");
+    const B=J.blobs||[];let b=0;
+    for(const x of B){await FC.putBlob(x.id,x.b64,x.type||"application/json");b++;msg(`마감 비교 파일 옮기는 중… ${b} / ${B.length}`);}
+    msg(`다 옮겼습니다 · 자료 ${docs.length}건${B.length?`, 마감 비교 파일 ${B.length}개`:""}. 새로고침하면 반영된 화면을 볼 수 있습니다.`);toast("자료를 다 옮겼습니다");
   }catch(e){console.error(e);msg("옮기다 멈췄습니다: "+((e&&e.message)||"알 수 없는 오류")+" · 같은 파일로 다시 해 주세요.");}
   $("impGo").disabled=false;
 }
