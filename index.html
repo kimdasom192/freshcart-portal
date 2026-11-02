@@ -4637,7 +4637,7 @@ span.ck{cursor:default}
       for (const e of (edits || [])) {
         if (e.table !== k) continue;
         if (e.deleted) { if (idx.has(e.src)) rows[idx.get(e.src)] = null; continue; }
-        const row = { src: e.src, dst: e.dst, name: e.name, price: e.price, vat: e.vat, tax: e.tax, edited: true };
+        const row = { src: e.src, dst: e.dst, name: e.name, price: e.price, vat: e.vat, tax: e.tax, per: e.per, edited: true };
         if (idx.has(e.src) && rows[idx.get(e.src)]) rows[idx.get(e.src)] = row; else { idx.set(e.src, rows.length); rows.push(row); }
       }
       merged[k] = rows.filter(Boolean);
@@ -4730,18 +4730,23 @@ span.ck{cursor:default}
   /* 업체별 업로드 행 만들기 → {rows, missing, total} */
   function convert(co, src, maps, date) {
     const C = COS[co], rows = [], missing = [];
+    // 매핑표의 입수량: 원본 1단위 = 자사 n단위 → 수량 × n (단가는 그에 맞춰 ÷ n)
+    const perOf = m => { const p = num(m && m.per); return p > 0 && p !== 1 ? p : 0; };
+    const mark = (name, per) => (rows.boxed = rows.boxed || []).push(name + ' ×' + per);
     const base = (code, name, spec, qty, price, sup, vat, memo) => [date, null, C.code, null, null, C.wh || 100, null, null, null, code, name, spec || null, qty, clean(price), null, clean(sup), clean(vat), memo, null];
     if (co === 'hanok') {
       let vanSum = 0;
       for (const r of src) {
         if (maps.hanokDan.has(r.code)) {
+          const per = perOf(maps.hanokDan.get(r.code)), q = per ? r.qty * per : r.qty; if (per) mark(r.name, per);
           const s1 = rnd(r.sup * FEE_RATE, 0), v1 = rnd(s1 * VAT_RATE, 0);
-          const up = r.qty ? rnd(s1 / r.qty, 0) : 0;
-          rows.push(base(r.code, r.name, null, r.qty, up, s1, v1, r.store));
+          const up = q ? rnd(s1 / q, 0) : 0;
+          rows.push(base(r.code, r.name, null, q, up, s1, v1, r.store));
         } else if (maps.hanokVan.has(r.code)) {
           const v = maps.hanokVan.get(r.code), p = num(v.price);
-          const s1 = rnd(p * r.qty, 0), v1 = v.tax === '과세' ? rnd(s1 * VAT_RATE, 0) : 0;
-          rows.push(base(r.code, r.name, null, r.qty, p, s1, v1, r.store));
+          const per = perOf(v), q = per ? r.qty * per : r.qty; if (per) mark(r.name, per);
+          const s1 = rnd(p * q, 0), v1 = v.tax === '과세' ? rnd(s1 * VAT_RATE, 0) : 0;
+          rows.push(base(r.code, r.name, null, q, p, s1, v1, r.store));
           vanSum += r.sup;
         } else missing.push({ code: r.code, name: r.name, table: 'hanok_dan' });
       }
@@ -4755,15 +4760,17 @@ span.ck{cursor:default}
         const m = M.src.get(r.code);
         const p = m && M.dst.get(m.dst);
         if (!m || !p || p.price === null || p.price === undefined || p.price === '') { missing.push({ code: r.code, name: r.name, table: co }); continue; }
-        const sup = num(p.price) * r.qty;
-        rows.push(base(m.dst, r.name, null, r.qty, num(p.price), sup, num(p.vat) * sup, C.memo));
+        const per = perOf(m), q = per ? r.qty * per : r.qty; if (per) mark(r.name, per);
+        const sup = num(p.price) * q;
+        rows.push(base(m.dst, r.name, null, q, num(p.price), sup, num(p.vat) * sup, C.memo));
       }
     } else if (co === 'macho') {
       // 태토 사용분('마초전표_태')도 같은 파일에 넣고 적요로만 구분
       for (const r of src) {
         const m = maps.macho.src.get(r.code);
         if (!m) { missing.push({ code: r.code, name: r.name, table: 'macho' }); continue; }
-        rows.push(base(m.dst, r.name, r.spec, r.qty, r.price, r.sup, r.vat, r.taeto ? '마초전표_태' : C.memo));
+        const per = perOf(m); if (per) mark(r.name, per);
+        rows.push(base(m.dst, r.name, r.spec, per ? r.qty * per : r.qty, per ? r.price / per : r.price, r.sup, r.vat, r.taeto ? '마초전표_태' : C.memo));
       }
     } else if (co === 'smartfood') {
       // 일자는 원본 납품요청일, 단가·금액은 원본 그대로, 품목코드만 매칭표의 자사코드로
@@ -4772,7 +4779,9 @@ span.ck{cursor:default}
         if (!m || !m.dst) { missing.push({ code: r.code, name: r.name, table: 'smartfood' }); continue; }
         let qty = r.qty, price = r.price;
         // 품명에 [BOX]가 붙은 박스 단위 품목: 수량 × 입수량, 단가 ÷ 입수량 (공급가액은 그대로)
-        if (/\[\s*BOX\s*\]/i.test(r.name)) {
+        const mper = perOf(m);
+        if (mper) { qty = r.qty * mper; price = r.price / mper; mark(r.name, mper); }
+        else if (/\[\s*BOX\s*\]/i.test(r.name)) {
           const all = [...r.name.matchAll(/\*\s*(\d+)\s*[A-Za-z가-힣]*\s*\/\s*B(?:O)?X/gi)];
           const per = all.length ? +all[all.length - 1][1] : 0;
           if (per > 0) { qty = r.qty * per; price = r.price / per; (rows.boxed = rows.boxed || []).push(r.name + ' ×' + per); }
@@ -5199,15 +5208,15 @@ const $ = s => document.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const fmt = n => Math.round(n||0).toLocaleString('ko-KR',{maximumFractionDigits:0});
 const TABLES = {
-  hanok_dan:{label:'한옥집 · 단가품목(물류비 7%)', cols:['src','name'], co:'hanok'},
-  hanok_van:{label:'한옥집 · 범용제품(매출원가)', cols:['src','name','price','tax'], co:'hanok'},
-  saengmacha:{label:'생마차', cols:['src','dst','name','price','vat'], co:'saengmacha'},
-  taeto:{label:'태토', cols:['src','dst','name','price','vat'], co:'taeto'},
-  macho:{label:'마초', cols:['src','dst','name'], co:'macho'},
-  smartfood:{label:'스마트푸드', cols:['src','dst','name'], co:'smartfood'},
+  hanok_dan:{label:'한옥집 · 단가품목(물류비 7%)', cols:['src','name','per'], co:'hanok'},
+  hanok_van:{label:'한옥집 · 범용제품(매출원가)', cols:['src','name','price','tax','per'], co:'hanok'},
+  saengmacha:{label:'생마차', cols:['src','dst','name','price','vat','per'], co:'saengmacha'},
+  taeto:{label:'태토', cols:['src','dst','name','price','vat','per'], co:'taeto'},
+  macho:{label:'마초', cols:['src','dst','name','per'], co:'macho'},
+  smartfood:{label:'스마트푸드', cols:['src','dst','name','per'], co:'smartfood'},
   tuna:{label:'참치학교 (오션원장 → 프카코드)', cols:['src','dst','name'], co:'tuna'},
 };
-const COLN = {src:'원본 품목코드',dst:'자사 품목코드',name:'품명',price:'단가',vat:'세율',tax:'과세여부'};
+const COLN = {src:'원본 품목코드',dst:'자사 품목코드',name:'품명',price:'단가',vat:'세율',tax:'과세여부',per:'입수량'};
 
 let edits = [];          // 공유 수정분
 let localOnly = false;   // 공유 저장 불가 시 이 화면에서만
@@ -5292,10 +5301,10 @@ function render(){
       <div class="meta">거래처코드 <span class="num">${C0.code}</span>${C0.memo?' · 적요 '+C0.memo:(co==='hanok'?' · 적요 매장명':'')}</div>
       <div class="actions"><button class="btn sm" disabled>미리보기</button><button class="btn sm primary" disabled>파일 받기</button></div></article>`;
     const warn = r.missing.length>0;
-    const missHtml = warn ? `<div class="miss"><h4>매핑에 없는 품목 ${r.missing.length}개 · 이 품목은 파일에서 빠집니다</h4>${r.missing.map(m=>missForm(co,m)).join('')}</div>` : '';
+    const missHtml = warn ? `<div class="miss"><h4>매핑에 없는 품목 ${r.missing.length}개 · 여기서 바로 등록하면 파일에 들어갑니다</h4><div class="small muted">원본과 자사 단위가 다르면 입수량에 원본 1단위당 자사 수량을 넣으세요 (예: 원본 BOX, 자사 EA 10개 → 10)</div>${r.missing.map(m=>missForm(co,m)).join('')}</div>` : '';
     return `<article class="co ${warn?'warn':''}"><div class="co-h"><h3>${C0.label}</h3><span class="pill ${warn?'warn':'ok'}">${warn?'확인 필요':'준비됨'}</span></div>
       <dl class="stats"><dt>업로드 줄</dt><dd>${r.rows.length}</dd><dt>공급가액</dt><dd>${fmt(r.total)}</dd><dt>부가세</dt><dd>${fmt(r.vat)}</dd>${r.taetoCount?`<dt>└ 태토 사용분</dt><dd>${r.taetoCount}줄 · ${fmt(r.taetoTotal)}</dd>`:''}</dl>
-      ${missHtml}${r.boxed&&r.boxed.length?`<div class="note small">박스 품목 ${r.boxed.length}줄은 수량×입수량, 단가÷입수량으로 바꿨습니다: ${r.boxed.slice(0,3).map(esc).join(', ')}${r.boxed.length>3?' 외':''}</div>`:''}${r.notes&&r.notes.length?`<div class="note warn small">저장품 ${r.notes.length}줄은 단위가 박스일 수 있어 수량을 확인하세요: ${r.notes.slice(0,3).map(esc).join(', ')}${r.notes.length>3?' 외':''}</div>`:''}
+      ${missHtml}${r.boxed&&r.boxed.length?`<div class="note small">입수량 적용 ${r.boxed.length}줄 (수량×입수량, 단가÷입수량): ${r.boxed.slice(0,3).map(esc).join(', ')}${r.boxed.length>3?' 외':''}</div>`:''}${r.notes&&r.notes.length?`<div class="note warn small">저장품 ${r.notes.length}줄은 단위가 박스일 수 있어 수량을 확인하세요: ${r.notes.slice(0,3).map(esc).join(', ')}${r.notes.length>3?' 외':''}</div>`:''}
       <div class="actions"><button class="btn sm" data-pv="${co}">미리보기</button><button class="btn sm primary" data-dl="${co}" ${r.rows.length?'':'disabled'}>파일 받기</button></div></article>`;
   }).join('');
   $('#cos').innerHTML = cards;
@@ -5309,10 +5318,10 @@ function missForm(co,m){
   const base = `<div class="miss-item"><div class="nm"><span class="num">${esc(m.code)}</span> ${esc(m.name)}</div><form class="mini" data-co="${co}" data-src="${esc(m.code)}" data-name="${esc(m.name)}">`;
   if(co==='hanok') return base+`<select data-kind name="kind" aria-label="구분"><option value="hanok_dan">단가품목(물류비 7%)</option><option value="hanok_van">범용제품</option></select>
     <span class="van-only mini" hidden><input name="price" inputmode="decimal" placeholder="매출원가"><select name="tax" aria-label="과세"><option>과세</option><option>면세</option></select></span>
-    <button class="btn sm primary">추가</button></form></div>`;
-  if(co==='macho'||co==='smartfood') return base+`<input name="dst" value="${esc(m.code)}" placeholder="자사 품목코드" aria-label="자사 품목코드"><button class="btn sm primary">추가</button></form></div>`;
+    <input name="per" inputmode="decimal" placeholder="입수량 (같으면 비움)" aria-label="입수량" style="width:130px"><button class="btn sm primary">추가</button></form></div>`;
+  if(co==='macho'||co==='smartfood') return base+`<input name="dst" value="${esc(m.code)}" placeholder="자사 품목코드" aria-label="자사 품목코드"><input name="per" inputmode="decimal" placeholder="입수량 (같으면 비움)" aria-label="입수량" style="width:130px"><button class="btn sm primary">추가</button></form></div>`;
   return base+`<input name="dst" value="${esc(m.code)}" placeholder="자사 품목코드" aria-label="자사 품목코드"><input name="price" inputmode="decimal" placeholder="단가" aria-label="단가" required>
-    <select name="vat" aria-label="세율"><option value="0.1">과세 10%</option><option value="0">면세</option></select><button class="btn sm primary">추가</button></form></div>`;
+    <select name="vat" aria-label="세율"><option value="0.1">과세 10%</option><option value="0">면세</option></select><input name="per" inputmode="decimal" placeholder="입수량 (같으면 비움)" aria-label="입수량" style="width:130px"><button class="btn sm primary">추가</button></form></div>`;
 }
 async function onMissSubmit(e){
   e.preventDefault();
@@ -5321,6 +5330,7 @@ async function onMissSubmit(e){
   let table=co;
   if(co==='hanok'){ table=fd.get('kind'); if(table==='hanok_van'){ const p=Number(String(fd.get('price')||'').replace(/,/g,'')); if(!isFinite(p)||!fd.get('price')){ toast('매출원가를 입력해 주세요'); return; } row.price=p; row.tax=fd.get('tax'); } }
   else { row.dst=String(fd.get('dst')||'').trim()||row.src; if(co!=='macho'&&co!=='smartfood'){ const p=Number(String(fd.get('price')||'').replace(/,/g,'')); if(!isFinite(p)){ toast('단가를 숫자로 입력해 주세요'); return; } row.price=p; row.vat=Number(fd.get('vat')); } }
+  const per=String(fd.get('per')||'').replace(/,/g,'').trim(); if(per){ const n=Number(per); if(!isFinite(n)||n<=0){ toast('입수량은 0보다 큰 숫자로 입력해 주세요'); return; } if(n!==1) row.per=n; }
   await saveEdit(table,row);
 }
 
@@ -5373,7 +5383,7 @@ function renderMap(){
   const rows=maps.merged[k].filter(r=>!q||[r.src,r.dst,r.name].some(v=>String(v||'').toLowerCase().includes(q)));
   $('#mapInfo').textContent=`${rows.length}개 품목${q?' (검색 결과)':''} · 줄을 누르면 수정할 수 있습니다`;
   $('#mapTbl').innerHTML=`<thead><tr>${T.cols.map(c=>`<th class="${c==='price'||c==='vat'?'r':''}">${COLN[c]}</th>`).join('')}</tr></thead><tbody>${
-    rows.map(r=>`<tr class="${r.edited?'edited':''}" data-src="${esc(r.src)}" tabindex="0">${T.cols.map(c=>{const v=r[c]; const t=c==='vat'?(Number(v)>0?'과세 '+Math.round(v*100)+'%':'면세'):c==='price'?fmt(v):esc(v); return `<td class="${c==='price'||c==='vat'?'r num':''}${c==='src'||c==='dst'?' code':''}">${t}</td>`;}).join('')}</tr>`).join('')}</tbody>`;
+    rows.map(r=>`<tr class="${r.edited?'edited':''}" data-src="${esc(r.src)}" tabindex="0">${T.cols.map(c=>{const v=r[c]; const t=c==='vat'?(Number(v)>0?'과세 '+Math.round(v*100)+'%':'면세'):c==='price'?fmt(v):c==='per'?(Number(v)>0&&Number(v)!==1?'×'+Number(v):''):esc(v); return `<td class="${c==='price'||c==='vat'?'r num':''}${c==='src'||c==='dst'?' code':''}">${t}</td>`;}).join('')}</tr>`).join('')}</tbody>`;
   $('#mapTbl').querySelectorAll('tbody tr').forEach(tr=>{ const open=()=>openEditor(k,maps.merged[k].find(r=>r.src===tr.dataset.src)); tr.onclick=open; tr.onkeydown=e=>{ if(e.key==='Enter') open(); }; });
   $('#syncNote').textContent = db ? (localOnly?'':'매핑 수정은 이 페이지를 쓰는 모든 사람에게 바로 반영됩니다. 표시된 줄(왼쪽 초록 선)은 기본표에서 수정·추가된 품목입니다.') : '지금은 공유 저장을 쓸 수 없어, 수정한 매핑은 이 화면을 닫으면 사라집니다.';
   $('#machoCodes').value=machoCodes.join(', ');
@@ -5383,6 +5393,7 @@ function openEditor(k,row){
   const field=c=>{
     if(c==='vat') return `<label>세율<select name="vat"><option value="0.1" ${Number(r.vat)>0||row==null?'selected':''}>과세 10%</option><option value="0" ${row&&!(Number(r.vat)>0)?'selected':''}>면세</option></select></label>`;
     if(c==='tax') return `<label>과세여부<select name="tax"><option ${r.tax!=='면세'?'selected':''}>과세</option><option ${r.tax==='면세'?'selected':''}>면세</option></select></label>`;
+    if(c==='per') return `<label>입수량 <span class="small">원본 1단위 = 자사 몇 개 · 같으면 비움</span><input name="per" value="${esc(r.per??'')}" inputmode="decimal" placeholder="예: 10"></label>`;
     return `<label>${COLN[c]}<input name="${c}" value="${esc(r[c]??'')}" ${c==='src'&&row?'readonly':''} ${c==='src'?'required':''} ${c==='price'?'inputmode="decimal"':''}></label>`;
   };
   ed.innerHTML=`<form id="edForm"><h2 style="margin-bottom:10px">${row?'품목 수정':'품목 추가'} <span class="small muted">${T.label}</span></h2><div class="editor">${T.cols.map(field).join('')}</div>
@@ -5393,7 +5404,7 @@ function openEditor(k,row){
   if(row){ $('#edDel').onclick=()=>$('#edConfirm').hidden=false; $('#edDelYes').onclick=async()=>{ await saveEdit(k,{src:r.src,deleted:true}); ed.hidden=true; }; }
   $('#edForm').onsubmit=async e=>{
     e.preventDefault(); const fd=new FormData(e.target); const out={};
-    for(const c of T.cols){ let v=fd.get(c); if(c==='price'){ v=Number(String(v||'').replace(/,/g,'')); if(!isFinite(v)){ toast('단가를 숫자로 입력해 주세요'); return; } } else if(c==='vat') v=Number(v); else v=String(v||'').trim(); out[c]=v; }
+    for(const c of T.cols){ let v=fd.get(c); if(c==='per'){ v=String(v||'').replace(/,/g,'').trim(); v=v?Number(v):null; if(v!=null&&(!isFinite(v)||v<=0)){ toast('입수량은 0보다 큰 숫자로 입력해 주세요'); return; } out.per=v; continue; } if(c==='price'){ v=Number(String(v||'').replace(/,/g,'')); if(!isFinite(v)){ toast('단가를 숫자로 입력해 주세요'); return; } } else if(c==='vat') v=Number(v); else v=String(v||'').trim(); out[c]=v; }
     if(!out.src){ toast('원본 품목코드를 입력해 주세요'); return; }
     if('dst' in out && !out.dst) out.dst=out.src;
     await saveEdit(k,out); ed.hidden=true;
