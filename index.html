@@ -238,6 +238,10 @@ button,input,select{font:inherit;color:inherit}
   body.qprint .paper{box-shadow:none;margin:0;padding:0;width:auto;min-height:0}
   body.qprint .paper th{-webkit-print-color-adjust:exact;print-color-adjust:exact}
 }
+.qcalc .nego b,.qcalc .fin b{color:var(--forest)}
+.qcalc .fin{background:var(--forest-soft)}
+.q-nego input{border-color:color-mix(in srgb,var(--warn) 55%,var(--line))}
+.paper td.ng{font-weight:700}
 
 /* 통합 메뉴 띠 */
 .hub{background:var(--sunk);border-bottom:1px solid var(--line)}
@@ -7580,22 +7584,23 @@ const MAIN=[
   ["req","견적요청품목","text"],["store","요청매장","text"],["requester","요청자","text"],["supplier","매입처","text"],
   ["name","제품명","text"],["spec","규격","text"],["unit","단위","text"],
   ["price","단가","num"],["vat","VAT","sel",["별도","포함"]],["tax","면과세","sel",["과세","면세"]],["storage","보관방법","sel",["","냉동","냉장","실온"]],
-  ["sale","매출가 (VAT별도)","num"],["target","타겟가 (VAT별도)","num"],
+  ["sale","매출가 (VAT별도)","num"],["target","타겟가 (VAT별도)","num"],["nego","협의단가 (VAT별도)","num"],
   ["note","비고 (내부)","text"],["clientNote","거래처 전달사항","text"]];
 const DETAIL=[["contact","매입처 담당자"],["pack","포장단위"],["moq","MOQ"],["origin","원산지"],["shelf","유통기한"],["lead","리드타임"],
   ["orderWay","발주방식"],["payCond","결제조건"],["dcAddr","물류센터주소"],["ship","배송방법"]];
 const blankItem=()=>({id:uid(),vat:"별도",tax:"과세",storage:"",inReport:true,inClient:true});
 const blankQuote=()=>({id:uid(),title:"",client:"",date:today(),validity:"견적일로부터 30일",pay:"협의",delivery:"협의",special:"",items:[blankItem()],createdAt:Date.now(),updatedAt:Date.now()});
 
-function calc(it){const p=num(it.price);const cost=p==null?null:(it.vat==="포함"?p/1.1:p);const sale=num(it.sale),target=num(it.target);
-  return {cost,sale,target,margin:cost!=null&&sale?(sale-cost)/sale:null,tMargin:cost!=null&&target?(target-cost)/target:null,gap:sale!=null&&target!=null?sale-target:null};}
+function calc(it){const p=num(it.price);const cost=p==null?null:(it.vat==="포함"?p/1.1:p);const sale=num(it.sale),target=num(it.target),nego=num(it.nego);
+  const mg=v=>cost!=null&&v?(v-cost)/v:null;const final=nego!=null?nego:sale;
+  return {cost,sale,target,nego,final,margin:mg(sale),tMargin:mg(target),nMargin:mg(nego),fMargin:mg(final),gap:final!=null&&target!=null?final-target:null};}
 /* 요청매장·요청자는 비우면 윗줄 값을 이어받음 */
 function withInherit(items){let st="",rq="";return items.map(it=>{st=it.store||st;rq=it.requester||rq;return Object.assign({},it,{_store:it.store||st,_req:it.requester||rq},calc(it));});}
 const named=it=>(it.name||"").trim()!=="";
 function stats(items){const r=withInherit(items).filter(named);const rep=r.filter(x=>x.inReport),cli=r.filter(x=>x.inClient);
-  const ms=rep.map(x=>x.margin).filter(v=>v!=null),ts=rep.map(x=>x.tMargin).filter(v=>v!=null);
+  const ms=rep.map(x=>x.fMargin).filter(v=>v!=null),ts=rep.map(x=>x.tMargin).filter(v=>v!=null);
   return {all:r,rep,cli,avg:ms.length?ms.reduce((a,b)=>a+b,0)/ms.length:null,tavg:ts.length?ts.reduce((a,b)=>a+b,0)/ts.length:null,
-    over:rep.filter(x=>x.gap!=null&&x.gap>0).length,noSale:cli.filter(x=>x.sale==null).length};}
+    over:rep.filter(x=>x.gap!=null&&x.gap>0).length,noSale:cli.filter(x=>x.final==null).length,nego:rep.filter(x=>x.nego!=null).length};}
 
 const Q={on:false,list:[],cur:null,tab:"items",dirty:false,timer:null,saving:false,savedAt:null,q:"",delAsk:false,openDetail:new Set()};
 function db(){return window.FC&&window.FC.db;}
@@ -7663,8 +7668,9 @@ function render(){
     <div class="qsum">
       <div><span>입력 품목</span><b>${S.all.length}</b></div>
       <div><span>보고용 · 거래처용</span><b>${S.rep.length} · ${S.cli.length}</b></div>
-      <div><span>평균 마진율</span><b>${pct(S.avg)}</b></div>
+      <div><span>평균 마진율 (최종 단가)</span><b>${pct(S.avg)}</b></div>
       <div><span>타겟가 기준 마진율</span><b>${pct(S.tavg)}</b></div>
+      <div><span>협의단가 적용</span><b>${S.nego}</b></div>
       <div class="${S.over?"warn":""}"><span>타겟가보다 비싼 품목</span><b>${S.over}</b></div>
     </div>
     <div class="qtabs" role="tablist">
@@ -7695,7 +7701,9 @@ function calcHtml(c){
     <div><span>매입가 (VAT별도)</span><b>${won(c.cost)}</b></div>
     <div><span>마진율</span><b class="${c.margin!=null&&c.margin<0?"neg":""}">${pct(c.margin)}</b></div>
     <div><span>타겟가 마진율</span><b class="${c.tMargin!=null&&c.tMargin<0?"neg":""}">${pct(c.tMargin)}</b></div>
-    <div class="${gapCls}"><span>매출가 − 타겟가</span><b>${c.gap==null?"-":(c.gap>0?"+":"")+won(c.gap)}</b></div></div>`;}
+    <div class="${c.nego!=null?"nego":""}"><span>협의단가 마진율</span><b class="${c.nMargin!=null&&c.nMargin<0?"neg":""}">${pct(c.nMargin)}</b></div>
+    <div class="fin"><span>최종 단가${c.nego!=null?" (협의)":" (매출가)"}</span><b>${won(c.final)}</b></div>
+    <div class="${gapCls}"><span>최종 단가 − 타겟가</span><b>${c.gap==null?"-":(c.gap>0?"+":"")+won(c.gap)}</b></div></div>`;}
 function renderItems(){
   const q=Q.cur,rows=withInherit(q.items);
   $("qBody").innerHTML=`<p class="muted qhint">제품명을 넣은 품목만 보고용·거래처용에 들어갑니다. 요청매장·요청자는 비워 두면 윗줄 값을 이어받습니다. 단가·매출가·타겟가는 숫자만 넣으면 됩니다.</p>
@@ -7733,14 +7741,14 @@ function renderItems(){
 function reportHtml(q,S){
   return `<div class="paper land" id="qPaper">
     <h1 class="ptitle">견적 검토 보고</h1>
-    <table class="pmeta"><tr><th>거래처</th><td>${esc(q.client)}</td><th>견적일자</th><td>${esc(kdate(q.date))}</td><th>평균 마진율</th><td>${pct(S.avg)}</td><th>타겟가 기준</th><td>${pct(S.tavg)}</td></tr></table>
+    <table class="pmeta"><tr><th>거래처</th><td>${esc(q.client)}</td><th>견적일자</th><td>${esc(kdate(q.date))}</td><th>평균 마진율<br>(최종 단가)</th><td>${pct(S.avg)}</td><th>타겟가 기준</th><td>${pct(S.tavg)}</td></tr></table>
     <table class="pt">
-      <thead><tr><th>No.</th><th>매입처</th><th>품목명</th><th>규격</th><th>단위</th><th>매입가<br>(VAT별도)</th><th>매출가<br>(VAT별도)</th><th>마진율</th><th>타겟가</th><th>타겟가<br>마진율</th><th>매출가−<br>타겟가</th><th>요청매장</th><th>요청자</th><th>비고</th></tr></thead>
+      <thead><tr><th>No.</th><th>매입처</th><th>품목명</th><th>규격</th><th>단위</th><th>매입가<br>(VAT별도)</th><th>매출가<br>(VAT별도)</th><th>마진율</th><th>타겟가</th><th>타겟가<br>마진율</th><th>협의단가</th><th>협의단가<br>마진율</th><th>요청매장</th><th>요청자</th><th>비고</th></tr></thead>
       <tbody>${S.rep.length?S.rep.map((x,i)=>`<tr><td class="c">${i+1}</td><td>${esc(x.supplier)}</td><td class="b">${esc(x.name)}</td><td>${esc(x.spec)}</td><td class="c">${esc(x.unit)}</td>
         <td class="r">${won(x.cost)}</td><td class="r">${won(x.sale)}</td><td class="r">${pct(x.margin)}</td><td class="r">${won(x.target)}</td><td class="r">${pct(x.tMargin)}</td>
-        <td class="r${x.gap>0?" up":""}">${x.gap==null?"-":(x.gap>0?"+":"")+won(x.gap)}</td><td>${esc(x._store)}</td><td>${esc(x._req)}</td><td>${esc(x.note)}</td></tr>`).join(""):`<tr><td colspan="14" class="c">보고용으로 고른 품목이 없습니다.</td></tr>`}</tbody>
+        <td class="r${x.nego!=null?" ng":""}">${won(x.nego)}</td><td class="r${x.nego!=null?" ng":""}">${pct(x.nMargin)}</td><td>${esc(x._store)}</td><td>${esc(x._req)}</td><td>${esc(x.note)}</td></tr>`).join(""):`<tr><td colspan="15" class="c">보고용으로 고른 품목이 없습니다.</td></tr>`}</tbody>
     </table>
-    <p class="pnote2">※ 마진율 = (매출가 − 매입가) ÷ 매출가, 타겟가 마진율 = (타겟가 − 매입가) ÷ 타겟가, 모두 VAT 별도 기준. 매출가−타겟가가 +이면 거래처 희망가보다 비싼 품목입니다.</p>
+    <p class="pnote2">※ 마진율 = (단가 − 매입가) ÷ 단가, VAT 별도 기준. 협의단가가 있는 품목은 협의단가가 거래처에 제시하는 최종 단가이며, 평균 마진율도 최종 단가 기준입니다.</p>
   </div>`;}
 function clientHtml(q,S){
   const hasNote=S.cli.some(x=>(x.clientNote||"").trim());
@@ -7754,7 +7762,7 @@ function clientHtml(q,S){
     <table class="pt">
       <thead><tr><th>No.</th><th>요청품목</th><th>품목명</th><th>규격</th><th>단위</th><th>단가<br>(VAT 별도)</th><th>과세<br>구분</th><th>보관<br>온도</th>${hasNote?"<th>비고</th>":""}</tr></thead>
       <tbody>${S.cli.length?S.cli.map((x,i)=>`<tr><td class="c">${i+1}</td><td>${esc(x.req)}</td><td class="b">${esc(x.name)}</td><td>${esc(x.spec)}</td><td class="c">${esc(x.unit)}</td>
-        <td class="r">${won(x.sale)}</td><td class="c">${esc(x.tax)}</td><td class="c">${esc(x.storage)}</td>${hasNote?`<td>${esc(x.clientNote)}</td>`:""}</tr>`).join(""):`<tr><td colspan="${hasNote?9:8}" class="c">거래처용으로 고른 품목이 없습니다.</td></tr>`}</tbody>
+        <td class="r">${won(x.final)}</td><td class="c">${esc(x.tax)}</td><td class="c">${esc(x.storage)}</td>${hasNote?`<td>${esc(x.clientNote)}</td>`:""}</tr>`).join(""):`<tr><td colspan="${hasNote?9:8}" class="c">거래처용으로 고른 품목이 없습니다.</td></tr>`}</tbody>
     </table>
     <table class="pmeta3"><tr><th>납품조건</th><td>${esc(q.delivery)}</td></tr><tr><th>특이사항</th><td>${esc(q.special).replace(/\n/g,"<br>")}</td></tr></table>
     <p class="pnote2">※ 단가는 부가세(VAT) 별도 금액이며, 과세 품목은 부가세 10%가 별도로 부과됩니다.<br>※ 원자재 시세 및 공급사 사정에 따라 단가가 변동될 수 있으며, 변동 시 사전에 안내드리겠습니다.</p>
@@ -7762,7 +7770,7 @@ function clientHtml(q,S){
   </div>`;}
 function renderDoc(kind){
   const q=Q.cur,S=stats(q.items);
-  const warn=kind==="client"&&S.noSale?`<p class="pnote qwarn">매출가가 비어 있는 품목이 ${S.noSale}개 있습니다. 거래처용 단가 칸에 '-'로 나옵니다.</p>`:"";
+  const warn=kind==="client"&&S.noSale?`<p class="pnote qwarn">매출가·협의단가가 모두 비어 있는 품목이 ${S.noSale}개 있습니다. 거래처용 단가 칸에 '-'로 나옵니다.</p>`:"";
   $("qBody").innerHTML=`<div class="acts2 qdocbar"><span class="muted">${kind==="report"?`보고용 ${S.rep.length}품목 · A4 가로`:`거래처용 ${S.cli.length}품목 · A4 세로`} · 품목 입력에서 체크한 품목만 들어갑니다.</span>
       <span class="sp"></span><button class="btn" type="button" id="qXlsx">엑셀 받기</button><button class="btn primary" type="button" id="qPrint">인쇄 · PDF 저장</button></div>
     ${warn}<div class="paperwrap">${kind==="report"?reportHtml(q,S):clientHtml(q,S)}</div>`;
@@ -7786,15 +7794,15 @@ async function xlsx(kind,q,S){
   const font={name:"맑은 고딕",size:10};const head={type:"pattern",pattern:"solid",fgColor:{argb:"FFF2F2F2"}};
   const cellSet=(c,v,o={})=>{c.value=v;c.font=Object.assign({},font,o.font||{});c.alignment=Object.assign({vertical:"middle",wrapText:true},o.align||{});if(o.border!==false)c.border=box;if(o.fill)c.fill=o.fill;if(o.fmt)c.numFmt=o.fmt;};
   if(kind==="report"){
-    const cols=[["No.",5],["매입처",14],["품목명",24],["규격",14],["단위",7],["매입가\n(VAT별도)",11],["매출가\n(VAT별도)",11],["마진율",8],["타겟가",11],["타겟가\n마진율",8],["매출가−\n타겟가",10],["요청매장",12],["요청자",9],["비고",20]];
+    const cols=[["No.",5],["매입처",14],["품목명",24],["규격",14],["단위",7],["매입가\n(VAT별도)",11],["매출가\n(VAT별도)",11],["마진율",8],["타겟가",11],["타겟가\n마진율",8],["협의단가",11],["협의단가\n마진율",8],["요청매장",12],["요청자",9],["비고",20]];
     cols.forEach((c,i)=>ws.getColumn(i+1).width=c[1]);
     ws.mergeCells(1,1,1,cols.length);cellSet(ws.getCell(1,1),"견적 검토 보고",{font:{size:16,bold:true},align:{horizontal:"center"},border:false});ws.getRow(1).height=30;
-    const meta=[["거래처",q.client],["견적일자",kdate(q.date)],["평균 마진율",S.avg],["타겟가 기준",S.tavg]];
+    const meta=[["거래처",q.client],["견적일자",kdate(q.date)],["평균 마진율(최종)",S.avg],["타겟가 기준",S.tavg]];
     meta.forEach((m,i)=>{const c=1+i*3;cellSet(ws.getCell(3,c),m[0],{fill:head,font:{bold:true},align:{horizontal:"center"}});ws.mergeCells(3,c+1,3,c+2);cellSet(ws.getCell(3,c+1),m[1]==null?"-":m[1],{fmt:i>=2?"0.0%":undefined});ws.getCell(3,c+2).border=box;});
     const hr=5;cols.forEach((c,i)=>cellSet(ws.getCell(hr,i+1),c[0],{fill:head,font:{bold:true},align:{horizontal:"center"}}));ws.getRow(hr).height=30;
-    S.rep.forEach((x,i)=>{const r=hr+1+i;const v=[i+1,x.supplier||"",x.name||"",x.spec||"",x.unit||"",x.cost==null?null:Math.round(x.cost),x.sale,x.margin,x.target,x.tMargin,x.gap,x._store||"",x._req||"",x.note||""];
-      v.forEach((val,j)=>cellSet(ws.getCell(r,j+1),val,{fmt:[5,6,8,10].includes(j)?"#,##0":[7,9].includes(j)?"0.0%":undefined,align:{horizontal:[0,4].includes(j)?"center":[5,6,7,8,9,10].includes(j)?"right":"left"}}));});
-    const fr=hr+2+S.rep.length;ws.mergeCells(fr,1,fr,cols.length);cellSet(ws.getCell(fr,1),"※ 마진율 = (매출가 − 매입가) ÷ 매출가, 타겟가 마진율 = (타겟가 − 매입가) ÷ 타겟가, 모두 VAT 별도 기준.",{font:{size:9},border:false});
+    S.rep.forEach((x,i)=>{const r=hr+1+i;const v=[i+1,x.supplier||"",x.name||"",x.spec||"",x.unit||"",x.cost==null?null:Math.round(x.cost),x.sale,x.margin,x.target,x.tMargin,x.nego,x.nMargin,x._store||"",x._req||"",x.note||""];
+      v.forEach((val,j)=>cellSet(ws.getCell(r,j+1),val,{fmt:[5,6,8,10].includes(j)?"#,##0":[7,9,11].includes(j)?"0.0%":undefined,align:{horizontal:[0,4].includes(j)?"center":[5,6,7,8,9,10,11].includes(j)?"right":"left"}}));});
+    const fr=hr+2+S.rep.length;ws.mergeCells(fr,1,fr,cols.length);cellSet(ws.getCell(fr,1),"※ 마진율 = (단가 − 매입가) ÷ 단가, VAT 별도 기준. 협의단가가 있는 품목은 협의단가가 최종 단가이며, 평균 마진율도 최종 단가 기준입니다.",{font:{size:9},border:false});
   }else{
     const hasNote=S.cli.some(x=>(x.clientNote||"").trim());
     const cols=[["No.",5],["요청품목",14],["품목명",24],["규격",13],["단위",7],["단가\n(VAT 별도)",12],["과세\n구분",7],["보관\n온도",7]];if(hasNote)cols.push(["비고",18]);
@@ -7809,7 +7817,7 @@ async function xlsx(kind,q,S){
       ws.mergeCells(r,split+2,r,n);cellSet(ws.getCell(r,split+2),R[i][1]);}
     ws.mergeCells(8,1,8,n);cellSet(ws.getCell(8,1),"아래와 같이 견적드립니다. 검토 부탁드립니다.",{border:false});
     const hr=9;cols.forEach((c,i)=>cellSet(ws.getCell(hr,i+1),c[0],{fill:head,font:{bold:true},align:{horizontal:"center"}}));ws.getRow(hr).height=30;
-    S.cli.forEach((x,i)=>{const r=hr+1+i;const v=[i+1,x.req||"",x.name||"",x.spec||"",x.unit||"",x.sale,x.tax||"",x.storage||""];if(hasNote)v.push(x.clientNote||"");
+    S.cli.forEach((x,i)=>{const r=hr+1+i;const v=[i+1,x.req||"",x.name||"",x.spec||"",x.unit||"",x.final,x.tax||"",x.storage||""];if(hasNote)v.push(x.clientNote||"");
       v.forEach((val,j)=>cellSet(ws.getCell(r,j+1),val,{fmt:j===5?"#,##0":undefined,align:{horizontal:[0,4,6,7].includes(j)?"center":j===5?"right":"left"}}));});
     let r=hr+2+S.cli.length;
     for(const [k,v] of [["납품조건",q.delivery||""],["특이사항",q.special||""]]){cellSet(ws.getCell(r,1),k,{fill:head,font:{bold:true},align:{horizontal:"center"}});ws.mergeCells(r,1,r,2);ws.mergeCells(r,3,r,n);cellSet(ws.getCell(r,3),v);r++;}
