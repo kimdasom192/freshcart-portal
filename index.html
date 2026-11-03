@@ -5640,10 +5640,17 @@ function tbl(cols, rows, isDiff, opt){
       (k&&cmpOpen.has(k)?`<tr class="drill"><td colspan="${cols.length}">${opt.drill(r)}</td></tr>`:''); }).join('')}</tbody></table></div>`;
 }
 function bindDrill(){ $('#cmpOut').querySelectorAll('[data-drill]').forEach(b=>b.onclick=()=>{ const k=b.dataset.drill; cmpOpen.has(k)?cmpOpen.delete(k):cmpOpen.add(k); const y=window.scrollY, wrap=b.closest('.tbl-wrap'), st=wrap&&wrap.scrollTop, sl=wrap&&wrap.scrollLeft; renderCmp(); window.scrollTo(0,y); const nb=$('#cmpOut').querySelector(`[data-drill="${CSS.escape(k)}"]`); const nw=nb&&nb.closest('.tbl-wrap'); if(nw){ nw.scrollTop=st; nw.scrollLeft=sl; } }); }
+const M4T={macho:'macho',taeto:'taeto',saeng:'saengmacha',tuna:'tuna'}, M4L={macho:'마초',taeto:'태토',saeng:'생마차',tuna:'참치학교'};
+function m4MapHtml(list){
+  return `<div class="miss"><h4>매핑표에 없는 원장 코드 ${list.length}개 · 여기서 바로 등록하면 다시 비교합니다</h4><div class="small muted">자사 품목코드를 넣고 추가를 누르세요. 생마차·태토는 업로드에도 쓰이니 단가와 세율도 넣어 두면 좋습니다 (비워 두면 업로드할 때 다시 물어봅니다).</div>`+
+    list.map(u=>{ const tb=M4T[u.brand]||u.brand, pr=tb==='taeto'||tb==='saengmacha';
+      return `<div class="miss-item"><div class="nm"><span class="pill idle">${esc(M4L[u.brand]||u.brand)}</span> <span class="num">${esc(u.code)}</span> ${esc(u.name||'')}</div><form class="mini cmpmap" data-table="${esc(tb)}" data-src="${esc(u.code)}" data-name="${esc(u.name||'')}"><input name="dst" value="${esc(u.code)}" placeholder="자사 품목코드" aria-label="자사 품목코드">${pr?`<input name="price" inputmode="decimal" placeholder="단가" aria-label="단가" style="width:90px"><select name="vat" aria-label="세율"><option value="0.1">과세 10%</option><option value="0">면세</option></select>`:''}<input name="per" inputmode="decimal" placeholder="입수량 (같으면 비움)" aria-label="입수량" style="width:130px"><button class="btn sm primary">추가</button></form></div>`; }).join('')+`</div>`;
+}
 function cmpPerMap(){ const t = cmpCo==='macho' ? maps.macho : cmpCo==='smartfood' ? maps.smartfood : null; return t ? new Map([...t.src].filter(([k,v])=>Number(v.per)>0).map(([k,v])=>[k,Number(v.per)])) : null; }
 if(!window.__cmpMapBound){ window.__cmpMapBound=true; document.getElementById('cmpOut').addEventListener('submit',async e=>{ const f=e.target.closest('form.cmpmap'); if(!f) return; e.preventDefault();
   const fd=new FormData(f); const row={src:f.dataset.src, name:f.dataset.name, dst:String(fd.get('dst')||'').trim()||f.dataset.src};
   const per=String(fd.get('per')||'').replace(/,/g,'').trim(); if(per){ const n=Number(per); if(!isFinite(n)||n<=0){ toast('입수량은 0보다 큰 숫자로 입력해 주세요'); return; } if(n!==1) row.per=n; }
+  if(f.querySelector('[name=price]')){ const pv=String(fd.get('price')||'').replace(/,/g,'').trim(); if(pv){ const n=Number(pv); if(!isFinite(n)){ toast('단가를 숫자로 입력해 주세요'); return; } row.price=n; } row.vat=Number(fd.get('vat')); }
   f.querySelector('button').disabled=true; await saveEdit(f.dataset.table,row); }); }
 function cmpCodeMap(){ const t = cmpCo==='macho' ? maps.macho : cmpCo==='smartfood' ? maps.smartfood : null; return t ? new Map([...t.src].map(([k,v])=>[k,v.dst||k])) : null; }
 function renderCmp(){
@@ -5751,7 +5758,7 @@ function renderCmp(){
     m4b:()=>m4&&['④ 업체별 합계 차이',MCOL.m4b,m4.brands.filter(x=>x.dq||x.dt)],
     m4q:()=>m4&&['④ 품목별 수량 차이',MCOL.m4i,m4.items.filter(x=>x.dq)],
     m4t:()=>m4&&['④ 품목별 합계 차이',MCOL.m4i,m4.items.filter(x=>x.dt)],
-    m4u:()=>m4&&['④ 매핑표에 없는 원장 코드 · 매핑표 관리에서 추가하면 다시 계산됩니다',MCOL.m4u,m4.unmapped],
+    m4u:()=>m4&&['④ 매핑표에 없는 원장 코드',MCOL.m4u,m4.unmapped],
     s1det:()=>R.s1&&['① 일자·품목별 수량 차이',COL.s1det,R.s1.detail],
     s1days:()=>R.s1&&['① 차이 나는 일자',COL.s1days,R.s1.byDate.filter(x=>x.diff)],
     qty:()=>R.s2&&['② 품목별 수량 차이',COL.items,R.s2.items.filter(x=>x.dq),OPT.items],
@@ -5764,7 +5771,7 @@ function renderCmp(){
   if(fv){
     const [title,cols,rows,opt]=fv;
     html+=`<section class="sec" id="focusSec"><div class="sec-h"><h2>${title} <span class="small muted">${fmt(rows.length)}${/일자$|일자별/.test(title)&&!/품목/.test(title)?'일':'건'}</span></h2><button class="btn sm" id="focusClear">전체 결과 보기</button></div>`+
-      (rows.length?tbl(cols,rows,null,opt):'<div class="empty-ok">차이가 없습니다.</div>')+'</section>';
+      (cmpFocus==='m4u'&&rows.length?m4MapHtml(rows):rows.length?tbl(cols,rows,null,opt):'<div class="empty-ok">차이가 없습니다.</div>')+'</section>';
     $('#cmpOut').innerHTML=html; bindFocus(); bindDrill(); return;
   }
   if(R.s1){
@@ -5797,7 +5804,7 @@ function renderCmp(){
   if(m4){
     const its=only?m4.items.filter(x=>x.dq||x.dt):m4.items;
     html+=`<section class="sec"><div class="sec-h"><h2>④ 월마감 · 오션원장 ↔ 프카 판매현황</h2><p class="small muted">${mon.replace('/','년 ')}월 · 원장 코드를 업체별 매핑표로 바꿔 비교 · 차이 = 프카 − 원장</p></div>`;
-    if(m4.unmapped.length) html+=`<div class="note warn">매핑표에 없는 원장 코드 ${m4.unmapped.length}개: ${m4.unmapped.slice(0,6).map(u=>esc(BL(u.brand).split(' ')[0]+' '+u.code)).join(', ')}${m4.unmapped.length>6?' 외':''} · 매핑표 관리에서 추가하면 다시 계산됩니다.</div>`;
+    if(m4.unmapped.length) html+=m4MapHtml(m4.unmapped);
     html+=`<h3 class="small muted">업체별 수량 · 합계</h3>`+tbl(MCOL.m4b,m4.brands,r=>r.dq||r.dt)+
       `<h3 class="small muted">품목별 수량 · 단가 · 합계</h3>`+(its.length?tbl(MCOL.m4i,its,r=>r.dq||r.dt):'<div class="empty-ok">품목별 수량·합계가 모두 맞습니다.</div>')+'</section>';
   }
