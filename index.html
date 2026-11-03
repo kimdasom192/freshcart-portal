@@ -5040,7 +5040,9 @@ span.ck{cursor:default}
     const put = (side, r, code0) => {
       const br = r.brand || 'macho';
       const code = merge ? merge(br, code0) : code0;
-      const it = add(items, br + '|' + code, () => ({ brand: br, key: code, src: '', name: r.name, aq: 0, bq: 0, at: 0, bt: 0, ap: new Set(), bp: new Set(), codes: new Set(), srcs: new Set() }));
+      const it = add(items, br + '|' + code, () => ({ brand: br, key: code, src: '', name: r.name, aq: 0, bq: 0, at: 0, bt: 0, ap: new Set(), bp: new Set(), codes: new Set(), srcs: new Set(), days: new Map() }));
+      const dd = add(it.days, r.date || '', () => ({ date: r.date || '', aq: 0, bq: 0, at: 0, bt: 0, ap: new Set(), bp: new Set() }));
+      dd[side + 'q'] += r.qty; dd[side + 't'] += r.sup + r.vat; dd[side + 'p'].add(r.price);
       it.codes.add(code0); if (code0 === code) it.name = r.name;
       if (side === 'a' && r.code !== code0) { it.srcs.add(r.code); it.src = [...it.srcs].join(', '); }
       it[side + 'q'] += r.qty; it[side + 't'] += r.sup + r.vat; it[side + 'p'].add(r.price);
@@ -5051,7 +5053,7 @@ span.ck{cursor:default}
     for (const r of b) put('b', r, r.code);
     const ps = s => [...s].sort((x, y) => x - y).map(v => v.toLocaleString('ko-KR')).join(', ');
     const order = ['macho', 'taeto', 'saeng', 'tuna'];
-    const it = [...items.values()].map(x => ({ brand: x.brand, key: x.key, codes: [...x.codes], src: x.src, name: x.name, aq: r2(x.aq), bq: r2(x.bq), dq: r2(x.bq - x.aq), ap: ps(x.ap), bp: ps(x.bp), priceDiff: !!(x.ap.size && x.bp.size) && ps(x.ap) !== ps(x.bp), at: x.at, bt: x.bt, dt: r2(x.bt - x.at) }))
+    const it = [...items.values()].map(x => ({ brand: x.brand, key: x.key, codes: [...x.codes], days: [...x.days.values()].sort((p, q) => p.date.localeCompare(q.date)).map(d => { const o = { date: d.date, aq: r2(d.aq), bq: r2(d.bq), dq: r2(d.bq - d.aq), ap: ps(d.ap), bp: ps(d.bp), at: d.at, bt: d.bt, dt: r2(d.bt - d.at) }; o.diff = !!(o.dq || o.dt); return o; }), src: x.src, name: x.name, aq: r2(x.aq), bq: r2(x.bq), dq: r2(x.bq - x.aq), ap: ps(x.ap), bp: ps(x.bp), priceDiff: !!(x.ap.size && x.bp.size) && ps(x.ap) !== ps(x.bp), at: x.at, bt: x.bt, dt: r2(x.bt - x.at) }))
       .sort((p, q) => (order.indexOf(p.brand) - order.indexOf(q.brand)) || p.key.localeCompare(q.key));
     const br = [...brands.values()].map(x => Object.assign(x, { label: BRANDS[x.brand] || x.brand, dq: r2(x.bq - x.aq), dt: r2(x.bt - x.at) })).sort((p, q) => order.indexOf(p.brand) - order.indexOf(q.brand));
     return { items: it, brands: br, unmapped: [...unmapped].map(s => { const [b, c, n] = s.split('|'); return { brand: b, code: c, name: n }; }),
@@ -5809,20 +5811,25 @@ function renderCmp(){
   const drillDay = r => { let rs=(R.s2.byDay.get(r.key)||[]); const total=rs.length; if(onlyDiffDrill) rs=rs.filter(x=>x.diff);
     if(!rs.length) return '<div class="small muted">품목별로는 차이가 없습니다.</div>';
     return `<div class="small muted drill-h">${r.key} · 품목별 ${onlyDiffDrill?`차이 있는 ${rs.length}개 (전체 ${total}개)`:`${total}개`}</div>`+subTbl(['자사코드','품명',{h:'구매 수량',r:1},'프카 수량','수량 차이','구매 단가','프카 단가','구매 합계','프카 합계','합계 차이'],rs,x=>`<td class="code">${esc(x.code)}</td><td>${esc(x.name)}</td>${nc(x.aq)}${nc(x.bq)}${dc(x.dq)}<td class="r num">${esc(x.ap)}</td><td class="r num">${esc(x.bp)}</td>${nc(x.at)}${nc(x.bt)}${dc(x.dt)}`); };
-  const OPT={ items:{key:r=>'i:'+r.key, drill:drillItem}, days:{key:r=>'d:'+r.key, drill:drillDay} };
+  const drillMon = (aL,bL,withAmt) => r => { let rs=r.days||[]; const total=rs.length; if(onlyDiffDrill) rs=rs.filter(x=>x.diff);
+    if(!rs.length) return '<div class="small muted">일자별로는 차이가 없습니다. 날짜가 서로 다르게 잡혀 있어 합쳐서만 맞을 수 있습니다.</div>';
+    const head=withAmt?['일자',aL+' 수량',bL+' 수량','수량 차이',aL+' 단가',bL+' 단가',aL+' 합계',bL+' 합계','합계 차이']:['일자',aL+' 수량',bL+' 수량','수량 차이'];
+    return `<div class="small muted drill-h">${esc(r.name)} · 일자별 ${onlyDiffDrill?`차이 있는 ${rs.length}일 (전체 ${total}일)`:`${total}일`}</div>`+subTbl(head,rs,x=>`<td>${esc((x.date||'').slice(5))}</td>${nc(x.aq)}${nc(x.bq)}${dc(x.dq)}`+(withAmt?`<td class="r num">${esc(x.ap)}</td><td class="r num">${esc(x.bp)}</td>${nc(x.at)}${nc(x.bt)}${dc(x.dt)}`:'')); };
+  const OPT={ items:{key:r=>'i:'+r.key, drill:drillItem}, days:{key:r=>'d:'+r.key, drill:drillDay},
+    m3:{key:r=>'m3:'+r.brand+'|'+r.key, drill:drillMon('구매','매장판매',false)}, m4:{key:r=>'m4:'+r.brand+'|'+r.key, drill:drillMon('원장','프카',true)} };
   const MCOL={
     m3b:[{h:'업체',f:r=>r.label},{h:'구매 수량',f:r=>r.aq,n:1},{h:'매장판매 수량',f:r=>r.bq,n:1},{h:'수량 차이',f:r=>r.dq,d:1}],
-    m3i:[{h:'업체',f:r=>BL(r.brand)},{h:'품목코드',f:r=>r.key,code:1},{h:'품명',f:r=>r.name},{h:'구매 수량',f:r=>r.aq,n:1},{h:'매장판매 수량',f:r=>r.bq,n:1},{h:'수량 차이',f:r=>r.dq,d:1}],
+    m3i:[{h:'업체',f:r=>BL(r.brand)},{h:'품목코드',f:r=>r.key,code:1,drill:1},{h:'품명',f:r=>r.name},{h:'구매 수량',f:r=>r.aq,n:1},{h:'매장판매 수량',f:r=>r.bq,n:1},{h:'수량 차이',f:r=>r.dq,d:1}],
     m4b:[{h:'업체',f:r=>r.label},{h:'원장 줄',f:r=>r.an,n:1},{h:'원장 수량',f:r=>r.aq,n:1},{h:'원장 합계',f:r=>r.at,n:1},{h:'프카 줄',f:r=>r.bn,n:1},{h:'프카 수량',f:r=>r.bq,n:1},{h:'프카 합계',f:r=>r.bt,n:1},{h:'수량 차이',f:r=>r.dq,d:1},{h:'합계 차이',f:r=>r.dt,d:1}],
-    m4i:[{h:'업체',f:r=>BL(r.brand)},{h:'프카코드',f:r=>r.codes&&r.codes.length>1?r.codes.join(' + '):r.key,code:1},{h:'원장코드',f:r=>r.src,code:1},{h:'품명',f:r=>r.name},{h:'원장 수량',f:r=>r.aq,n:1},{h:'프카 수량',f:r=>r.bq,n:1},{h:'수량 차이',f:r=>r.dq,d:1},{h:'원장 단가',f:r=>r.ap,p:1},{h:'프카 단가',f:r=>r.bp,p:1},{h:'원장 합계',f:r=>r.at,n:1},{h:'프카 합계',f:r=>r.bt,n:1},{h:'합계 차이',f:r=>r.dt,d:1}],
+    m4i:[{h:'업체',f:r=>BL(r.brand)},{h:'프카코드',f:r=>r.codes&&r.codes.length>1?r.codes.join(' + '):r.key,code:1,drill:1},{h:'원장코드',f:r=>r.src,code:1},{h:'품명',f:r=>r.name},{h:'원장 수량',f:r=>r.aq,n:1},{h:'프카 수량',f:r=>r.bq,n:1},{h:'수량 차이',f:r=>r.dq,d:1},{h:'원장 단가',f:r=>r.ap,p:1},{h:'프카 단가',f:r=>r.bp,p:1},{h:'원장 합계',f:r=>r.at,n:1},{h:'프카 합계',f:r=>r.bt,n:1},{h:'합계 차이',f:r=>r.dt,d:1}],
     m4u:[{h:'업체',f:r=>BL(r.brand)},{h:'원장코드',f:r=>r.code,code:1},{h:'품명',f:r=>r.name},{h:'추가할 매핑표',f:r=>({macho:'마초',taeto:'태토',saeng:'생마차',tuna:'참치학교'})[r.brand]}],
   };
   const FOCUS={
     m3b:()=>m3&&['③ 업체별 수량 차이',MCOL.m3b,m3.brands.filter(x=>x.dq)],
-    m3q:()=>m3&&['③ 품목별 수량 차이',MCOL.m3i,m3.items.filter(x=>x.dq)],
+    m3q:()=>m3&&['③ 품목별 수량 차이',MCOL.m3i,m3.items.filter(x=>x.dq),OPT.m3],
     m4b:()=>m4&&['④ 업체별 합계 차이',MCOL.m4b,m4.brands.filter(x=>x.dq||x.dt)],
-    m4q:()=>m4&&['④ 품목별 수량 차이',MCOL.m4i,m4.items.filter(x=>x.dq)],
-    m4t:()=>m4&&['④ 품목별 합계 차이',MCOL.m4i,m4.items.filter(x=>x.dt)],
+    m4q:()=>m4&&['④ 품목별 수량 차이',MCOL.m4i,m4.items.filter(x=>x.dq),OPT.m4],
+    m4t:()=>m4&&['④ 품목별 합계 차이',MCOL.m4i,m4.items.filter(x=>x.dt),OPT.m4],
     m4u:()=>m4&&['④ 매핑표에 없는 원장 코드',MCOL.m4u,m4.unmapped],
     s1det:()=>R.s1&&['① 일자·품목별 수량 차이',COL.s1det,R.s1.detail],
     s1days:()=>R.s1&&['① 차이 나는 일자',COL.s1days,R.s1.byDate.filter(x=>x.diff)],
@@ -5864,7 +5871,7 @@ function renderCmp(){
     const its=only?m3.items.filter(x=>x.dq):m3.items;
     html+=`<section class="sec"><div class="sec-h"><h2>③ 월마감 · 오션 구매 ↔ 생마차·태토 매장 판매</h2><p class="small muted">${mon.replace('/','년 ')}월 · 품목코드 그대로 · 차이 = 매장판매 − 구매</p></div>`+
       `<h3 class="small muted">업체별</h3>`+tbl(MCOL.m3b,m3.brands,r=>r.dq)+
-      `<h3 class="small muted">품목별 수량</h3>`+(its.length?tbl(MCOL.m3i,its,r=>r.dq):'<div class="empty-ok">품목별 수량이 모두 맞습니다.</div>')+'</section>';
+      `<h3 class="small muted">품목별 수량</h3>`+(its.length?tbl(MCOL.m3i,its,r=>r.dq,OPT.m3):'<div class="empty-ok">품목별 수량이 모두 맞습니다.</div>')+'</section>';
   }
   if(m4){
     const its=only?m4.items.filter(x=>x.dq||x.dt):m4.items;
@@ -5872,7 +5879,7 @@ function renderCmp(){
     if(m4.unmapped.length) html+=m4MapHtml(m4.unmapped);
     html+=m4MergeHtml(mon,m4);
     html+=`<h3 class="small muted">업체별 수량 · 합계</h3>`+tbl(MCOL.m4b,m4.brands,r=>r.dq||r.dt)+
-      `<h3 class="small muted">품목별 수량 · 단가 · 합계</h3>`+(its.length?tbl(MCOL.m4i,its,r=>r.dq||r.dt):'<div class="empty-ok">품목별 수량·합계가 모두 맞습니다.</div>')+'</section>';
+      `<h3 class="small muted">품목별 수량 · 단가 · 합계</h3>`+(its.length?tbl(MCOL.m4i,its,r=>r.dq||r.dt,OPT.m4):'<div class="empty-ok">품목별 수량·합계가 모두 맞습니다.</div>')+'</section>';
   }
   $('#cmpOut').innerHTML=html; bindFocus(); bindDrill();
 }
