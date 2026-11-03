@@ -4195,6 +4195,16 @@ button.dl-card[aria-expanded="true"]{border-color:var(--accent);box-shadow:0 0 0
       <div class="tbl-wrap tbl-scroll"><table id="mapTbl"></table></div>
       <div id="syncNote" class="note"></div>
     </div>
+    <div class="panel" style="margin-top:16px" id="pcBox">
+      <div class="results-head"><h2>단가 변경 파일 반영 <span class="small muted">생마차 · 태토</span></h2></div>
+      <p class="small muted" style="margin:0">오션베리 단가변동 엑셀(품목코드 · 기존단가 · 변경단가)을 올리면 생마차·태토 매핑표에서 같은 자사 품목코드를 찾아 바뀔 단가를 보여 줍니다. 확인하고 반영을 누르면 매핑 단가가 바뀝니다.</p>
+      <label class="drop drop-row" id="pcDrop" for="pcIn">
+        <strong>단가 변경 엑셀을 끌어다 놓거나 눌러서 선택</strong>
+        <span class="small muted">시트가 여러 개면 '오션베리' 시트를 먼저 고릅니다</span>
+        <input type="file" id="pcIn" accept=".xlsx,.xls">
+      </label>
+      <div id="pcOut"></div>
+    </div>
     <div class="panel" style="margin-top:16px">
       <h2>고메·마초 구분</h2>
       <p class="small muted" style="margin:0">구매현황내역 원본을 한 파일로 받을 때, 아래 거래처코드(원본 맨 끝 열)는 마초로, 나머지는 고메로 나눕니다. 파일명에 '고메' 또는 '마초'만 들어 있으면 파일명이 우선합니다.</p>
@@ -5470,6 +5480,80 @@ async function saveEdit(table,row){
   edits=edits.filter(x=>!(x.table===table&&x.src===row.src)); edits.push(rec); applyEdits();
   if(!db) toast('이 화면에만 적용됨');
 }
+
+/* ===== 단가 변경 파일 → 생마차·태토 매핑 단가 ===== */
+const PC={file:'',sheets:[],sheet:'',rows:[],sel:new Set(),busy:false};
+const pcNum=v=>{ if(v===null||v===undefined||v==='') return null; const n=Number(String(v).replace(/[,\s원]/g,'')); return isFinite(n)?n:null; };
+function pcParse(aoa){
+  let h=-1,cols=[];
+  for(let i=0;i<Math.min(aoa.length,15);i++){ const r=(aoa[i]||[]).map(x=>String(x??'').replace(/\s/g,'')); if(r.includes('품목코드')&&r.some(c=>c.startsWith('변경단가'))){ h=i; cols=r; break; } }
+  if(h<0) return null;
+  const I=n=>cols.findIndex(c=>c.startsWith(n));
+  const ix={code:I('품목코드'),name:I('품목명'),old:I('기존단가'),nw:I('변경단가'),note:I('비고')};
+  const out=new Map();
+  for(const r of aoa.slice(h+1)){ const code=String(r[ix.code]??'').trim(); if(!code) continue;
+    out.set(code,{code,name:String(r[ix.name]??''),old:pcNum(r[ix.old]),nwRaw:r[ix.nw],nw:pcNum(r[ix.nw]),note:ix.note>=0?String(r[ix.note]??'').trim():''}); }
+  return out;
+}
+function pcBuild(src){
+  const rows=[],seen=new Set();
+  for(const t of ['saengmacha','taeto']) for(const m of (maps.merged[t]||[])){
+    const k=t+'|'+m.src; if(seen.has(k)) continue; const x=src.get(String(m.dst||m.src)); if(!x) continue; seen.add(k);
+    const cur=pcNum(m.price);
+    let kind;
+    if(x.nw===null) kind=String(x.nwRaw??'').trim()?'text':null;
+    else if(cur===x.nw) kind='same';
+    else if(x.old!==null&&x.nw!==x.old) kind='change';
+    else kind='diff';
+    if(!kind) continue;
+    rows.push({t,k,m,x,cur,kind});
+  }
+  return rows;
+}
+async function pcLoad(f){
+  try{
+    const wb=XLSX.read(await f.arrayBuffer(),{type:'array'});
+    const ok=wb.SheetNames.map(sn=>({sn,map:pcParse(XLSX.utils.sheet_to_json(wb.Sheets[sn],{header:1,raw:true,defval:null}))})).filter(x=>x.map&&x.map.size);
+    if(!ok.length){ toast('품목코드·변경단가 열이 있는 시트를 찾지 못했습니다'); return; }
+    PC.file=f.name; PC.sheets=ok; PC.sheet=(ok.find(x=>/오션/.test(x.sn))||ok[0]).sn; pcPick();
+  }catch(e){ toast('파일을 읽지 못했습니다'); }
+}
+function pcPick(){ const s=PC.sheets.find(x=>x.sn===PC.sheet); PC.rows=pcBuild(s.map); PC.sel=new Set(PC.rows.filter(r=>r.kind==='change').map(r=>r.k)); pcRender(); }
+function pcRender(){
+  const o=$('#pcOut'); if(!PC.rows&&!PC.file){ o.innerHTML=''; return; }
+  const L=PC.label||{saengmacha:'생마차',taeto:'태토'};
+  const g=k=>PC.rows.filter(r=>r.kind===k);
+  const ch=g('change'),df=g('diff'),tx=g('text'),sm=g('same');
+  const row=r=>`<tr><td><input type="checkbox" data-pc="${esc(r.k)}" ${PC.sel.has(r.k)?'checked':''} aria-label="${esc(r.m.name)} 반영"></td><td>${L[r.t]}</td><td class="code">${esc(r.m.src)}</td><td class="code">${esc(r.m.dst)}</td><td class="wrap">${esc(r.m.name)}</td><td class="r num">${r.cur==null?'-':fmt(r.cur)}</td><td class="r num"><strong>${fmt(r.x.nw)}</strong></td><td class="r num">${r.cur==null?'':(r.x.nw-r.cur>0?'+':'')+fmt(r.x.nw-r.cur)}</td><td class="small">${esc(r.x.note)}</td></tr>`;
+  const head=`<thead><tr><th></th><th>업체</th><th>원본코드</th><th>자사코드</th><th>품명</th><th class="r">지금 단가</th><th class="r">바뀔 단가</th><th class="r">차이</th><th>비고</th></tr></thead>`;
+  o.innerHTML=`<div class="cmp-actions" style="margin:10px 0 6px"><span class="small"><strong>${esc(PC.file)}</strong></span>${PC.sheets.length>1?`<select id="pcSheet" class="month-in" aria-label="시트">${PC.sheets.map(x=>`<option ${x.sn===PC.sheet?'selected':''}>${esc(x.sn)}</option>`).join('')}</select>`:`<span class="small muted">${esc(PC.sheet)} 시트</span>`}
+      <span class="small muted">변경 ${ch.length}줄 · 이미 같은 단가 ${sm.length}줄</span></div>
+    ${ch.length?`<h3 class="small">이번 단가 변경 · ${ch.length}줄</h3><div class="tbl-wrap"><table>${head}<tbody>${ch.map(row).join('')}</tbody></table></div>`:`<div class="empty-ok">이 파일에서 생마차·태토 매핑에 해당하는 단가 변경이 없습니다.</div>`}
+    ${df.length?`<details class="exp-box" style="margin-top:10px"><summary class="small"><strong>지금 매핑 단가가 파일 단가와 다른 품목 ${df.length}줄</strong> · 이번에 바뀐 건 아니지만 예전 변경분이 빠졌을 수 있어요. 맞추려면 체크하세요</summary><div class="tbl-wrap" style="margin-top:8px"><table>${head}<tbody>${df.map(row).join('')}</tbody></table></div></details>`:''}
+    ${tx.length?`<div class="note warn" style="margin-top:10px">변경단가가 숫자가 아니라 반영하지 않는 품목: ${tx.map(r=>`${L[r.t]} ${esc(r.m.name)} (${esc(String(r.x.nwRaw))})`).join(', ')}</div>`:''}
+    <div class="actions" style="margin-top:12px"><button class="btn primary" id="pcGo" ${PC.sel.size&&!PC.busy?'':'disabled'}>선택한 ${PC.sel.size}줄 반영</button><button class="btn" id="pcClr">닫기</button></div>`;
+  const sh=$('#pcSheet'); if(sh) sh.onchange=()=>{ PC.sheet=sh.value; pcPick(); };
+  o.querySelectorAll('[data-pc]').forEach(c=>c.onchange=()=>{ c.checked?PC.sel.add(c.dataset.pc):PC.sel.delete(c.dataset.pc); $('#pcGo').disabled=!PC.sel.size; $('#pcGo').textContent=`선택한 ${PC.sel.size}줄 반영`; });
+  $('#pcClr').onclick=()=>{ PC.file=''; PC.rows=null; PC.sheets=[]; $('#pcIn').value=''; pcRender(); };
+  $('#pcGo').onclick=pcApply;
+}
+async function pcApply(){
+  const list=PC.rows.filter(r=>PC.sel.has(r.k)); if(!list.length) return;
+  PC.busy=true; $('#pcGo').disabled=true; $('#pcGo').textContent='반영하는 중…';
+  let n=0;
+  for(const r of list){
+    const row={src:r.m.src,dst:r.m.dst,name:r.m.name,price:r.x.nw,vat:Number(r.m.vat)||0}; if(Number(r.m.per)>0) row.per=Number(r.m.per);
+    const rec=Object.assign({table:r.t,updatedAt:Date.now()},row);
+    try{ if(db&&!localOnly) await db.doc('mapEdits/'+docId(r.t,row.src)).set(rec); else { edits=edits.filter(x=>!(x.table===r.t&&x.src===row.src)); edits.push(rec); } n++; }catch(e){}
+  }
+  if(!db||localOnly) applyEdits();
+  PC.busy=false; toast(`매핑 단가 ${n}줄을 바꿨습니다${n<list.length?` · ${list.length-n}줄은 저장하지 못했습니다`:''}`);
+  setTimeout(()=>{ const s=PC.sheets.find(x=>x.sn===PC.sheet); if(s){ PC.rows=pcBuild(s.map); PC.sel=new Set(PC.rows.filter(x=>x.kind==='change').map(x=>x.k)); } pcRender(); },800);
+}
+$('#pcIn').addEventListener('change',e=>{ const f=e.target.files[0]; if(f) pcLoad(f); });
+(function(){ const d=$('#pcDrop'); ['dragover','dragenter'].forEach(ev=>d.addEventListener(ev,e=>{ e.preventDefault(); d.classList.add('over'); })); ['dragleave','drop'].forEach(ev=>d.addEventListener(ev,e=>{ e.preventDefault(); d.classList.remove('over'); }));
+  d.addEventListener('drop',e=>{ const f=e.dataTransfer.files[0]; if(f) pcLoad(f); }); })();
+
 function applyEdits(){ maps=C.buildMaps(BASE,edits); document.querySelectorAll('#expList [data-exp]').forEach(b=>{ const s=b.parentElement.querySelector('.num'); if(s) s.textContent=maps.merged[b.dataset.exp].length; }); render(); if(!$('#view-map').hidden) renderMap(); if(typeof renderCmp==='function') renderCmp(); }
 
 /* ===== 마감 비교 ===== */
