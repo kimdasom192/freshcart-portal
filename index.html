@@ -3730,7 +3730,10 @@ button{cursor:pointer}
 .dates .cell{padding:8px 14px;display:flex;flex-direction:column;gap:2px;min-width:0}
 .dates .cell+.cell{border-left:1px solid var(--line)}
 .dates label{font-size:12px;color:var(--muted);letter-spacing:.02em}
-.dates input{border:0;background:transparent;padding:0;font-family:var(--f-num);font-size:15px}
+.dates input{border:1px solid var(--line);border-radius:6px;background:var(--surface);padding:3px 6px;font-family:var(--f-num);font-size:15px;color:var(--ink);cursor:pointer}
+.dates input:hover,.dates input:focus{border-color:var(--accent);outline:none}
+.dates .cell .btn{margin-top:4px;align-self:flex-start}
+.dates.changed{border-color:var(--accent)}
 .dates .out{font-family:var(--f-num);font-size:17px;font-weight:500;color:var(--accent)}
 .dates .rule{font-size:12px;color:var(--muted)}
 
@@ -4001,7 +4004,7 @@ button.dl-card[aria-expanded="true"]{border-color:var(--accent);box-shadow:0 0 0
     <div class="dates" role="group" aria-label="일자">
       <div class="cell"><label for="workDate">작업일</label><input type="date" id="workDate"></div>
       <div class="cell"><label for="upDate">업로드 일자</label><input type="date" id="upDate" class="out"></div>
-      <div class="cell"><span class="rule">월~금 +1일<br>토 +2일(월요일)</span></div>
+      <div class="cell"><span class="rule">작업일을 바꾸면 업로드 일자 자동 계산<br>(월~금 +1일 · 토 +2일) · 둘 다 직접 바꿀 수 있음</span><button type="button" class="btn sm" id="dateReset" hidden>오늘 기준으로</button></div>
     </div>
   </header>
 
@@ -5320,8 +5323,14 @@ const fromIso = s => { const [y,m,d]=s.split('-').map(Number); return new Date(y
 const wd = $('#workDate'), ud = $('#upDate');
 wd.value = iso(new Date());
 ud.value = iso(C.uploadDate(new Date()));
-wd.addEventListener('change',()=>{ if(!wd.value) return; ud.value = iso(C.uploadDate(fromIso(wd.value))); render(); });
-ud.addEventListener('change',render);
+/* 기본은 오늘 기준 자동, 작업일·업로드 일자 모두 직접 바꿀 수 있음 */
+const dateMark=()=>{ const ch = wd.value!==iso(new Date()) || ud.value!==iso(C.uploadDate(new Date())); $('#dateReset').hidden=!ch; $('.dates').classList.toggle('changed',ch); };
+wd.addEventListener('change',()=>{ if(!wd.value) wd.value=iso(new Date()); ud.value = iso(C.uploadDate(fromIso(wd.value))); dateMark(); render(); });
+ud.addEventListener('change',()=>{ if(!ud.value) ud.value=iso(C.uploadDate(fromIso(wd.value))); dateMark(); render(); });
+$('#dateReset').onclick=()=>{ wd.value=iso(new Date()); ud.value=iso(C.uploadDate(new Date())); dateMark(); render(); };
+/* 원본 안의 일자(일자-No.·출고일자·납품요청일) */
+function srcDates(aoa){ const set=new Set(); for(const row of (aoa||[]).slice(0,4000)){ for(const v of (row||[]).slice(0,3)){ const m=String(v==null?'':v).match(/^(\d{4})[\/-](\d{1,2})[\/-](\d{1,2})/); if(m){ set.add(m[1]+'-'+m[2].padStart(2,'0')+'-'+m[3].padStart(2,'0')); break; } } } return [...set].sort(); }
+const mdOf=s=>`${+s.slice(5,7)}/${+s.slice(8,10)}`;
 const upDate = () => ud.value ? fromIso(ud.value) : C.uploadDate(new Date());
 const tagDate = () => { const d = wd.value ? fromIso(wd.value) : new Date(); return String(d.getMonth()+1).padStart(2,'0')+String(d.getDate()).padStart(2,'0'); };
 
@@ -5400,7 +5409,8 @@ function compute(){
       if(p.unknown.length > known){ perFile.push({f, text:'마감 비교용 매장 판매자료로 보입니다. 마감 비교 탭에 올려주세요', err:true}); continue; }
       parts.push('업체 미확인 '+p.unknown.length+'줄');
     }
-    perFile.push({f, text: parts.join(' · ') || '품목 줄 없음', err: !parts.length});
+    const none=!parts.length, sd=srcDates(f.aoa); if(sd.length&&!none) parts.push('원본 일자 '+(sd.length>1?mdOf(sd[0])+'~'+mdOf(sd[sd.length-1]):mdOf(sd[0])));
+    perFile.push({f, text: parts.join(' · ') || '품목 줄 없음', err: none});
   }
   const d = upDate();
   results={};
