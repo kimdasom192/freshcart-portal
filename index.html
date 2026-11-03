@@ -4000,6 +4000,7 @@ button.dl-card[aria-expanded="true"]{border-color:var(--accent);box-shadow:0 0 0
         <li>마초 원본의 태토 사용분('마초전표_태')은 마초 파일에 함께 들어가고 적요로 구분됩니다.</li>
         <li>스마트푸드: 주문내역 (일자는 납품요청일 그대로)</li>
         <li>제목 줄·합계 줄은 지우지 않고 그대로 올리면 됩니다.</li>
+        <li>오늘 올린 원본은 오늘 하루 보관돼서 다시 들어와도 그대로 있습니다. 다음 날이 되면 자동으로 지워집니다.</li>
       </ol>
       <button class="btn" id="clearBtn" hidden>올린 파일 모두 지우기</button>
     </div>
@@ -5300,7 +5301,7 @@ async function addFiles(list){
   for(const f of list){
     const id = f.name+'|'+f.size;
     files = files.filter(x=>x.id!==id);
-    const entry = {id, name:f.name, size:f.size, aoa:null, error:null};
+    const entry = {id, name:f.name, size:f.size, aoa:null, error:null, at:Date.now()};
     try{
       const wb = XLSX.read(await f.arrayBuffer(), {type:'array', cellDates:false});
       let found=null;
@@ -5313,14 +5314,45 @@ async function addFiles(list){
     }catch(e){ entry.error='파일을 열지 못했습니다'; }
     files.push(entry);
   }
-  render();
+  render(); runSave();
 }
 const fileIn=$('#fileIn'), drop=$('#drop');
 fileIn.addEventListener('change',()=>{ addFiles([...fileIn.files]); fileIn.value=''; });
 drop.addEventListener('dragover',e=>{e.preventDefault();drop.classList.add('over');});
 drop.addEventListener('dragleave',()=>drop.classList.remove('over'));
 drop.addEventListener('drop',e=>{e.preventDefault();drop.classList.remove('over'); addFiles([...e.dataTransfer.files].filter(f=>/\.xls[xm]?$/i.test(f.name)));});
-$('#clearBtn').onclick=()=>{ files=[]; render(); };
+$('#clearBtn').onclick=()=>{ files=[]; render(); runSave(); };
+/* 오늘 올린 원본 보관: 오늘(한국 날짜) 하루 동안 남기고, 다음 날 들어오면 지난 자료는 지움 */
+const runDay=()=>new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Seoul'}).format(new Date());
+const runDoc=d=>db.doc('blobs/runs/days/'+d);
+let runSaved=[], runQ=Promise.resolve();
+const runSave=()=>{ runQ=runQ.then(runPersist).catch(()=>{}); return runQ; };
+async function runPersist(){
+  if(!db||!assets) return;
+  const keep=[];
+  for(const f of files){ if(f.error||!f.aoa) continue;
+    let x=runSaved.find(y=>y.id===f.id&&y.at===f.at);
+    if(!x){ try{ const up=await assets.upload(new Blob([JSON.stringify(f.aoa)],{type:'application/json'})); x={id:f.id,name:f.name,size:f.size,sheet:f.sheet||'',assetId:up.id,at:f.at}; }catch(e){ continue; } }
+    keep.push(x); }
+  for(const y of runSaved) if(!keep.some(k=>k.assetId===y.assetId)) assets.delete(y.assetId).catch(()=>{});
+  runSaved=keep;
+  try{ await runDoc(runDay()).set({day:runDay(), files:keep, updatedAt:Date.now()}); }catch(e){}
+}
+async function runRestore(){
+  if(!db) return;
+  try{
+    const s=await runDoc(runDay()).get(); const d=s.exists&&s.data();
+    if(d&&Array.isArray(d.files)&&d.files.length&&!files.length){
+      for(const x of d.files){ try{ const res=await fetch('/_blob/'+x.assetId); if(!res.ok) continue; const aoa=await res.json();
+        files.push({id:x.id,name:x.name,size:x.size,sheet:x.sheet,aoa,error:null,at:x.at}); runSaved.push(x); }catch(e){} }
+      if(files.length){ render(); toast(`오늘 올린 원본 ${files.length}개를 다시 불러왔습니다`); }
+    }
+    const all=await db.collection('blobs/runs/days').get();
+    for(const doc of all.docs){ if(doc.id===runDay()) continue; const v=doc.data()||{};
+      for(const y of (v.files||[])) if(assets) assets.delete(y.assetId).catch(()=>{});
+      runDoc(doc.id).delete().catch(()=>{}); }
+  }catch(e){}
+}
 
 /* 계산 + 그리기 */
 function compute(){
@@ -5344,9 +5376,9 @@ function compute(){
 }
 function render(){
   const perFile = compute();
-  $('#fileList').innerHTML = perFile.map(x=>`<li><div style="min-width:0"><div class="fn">${esc(x.f.name)}</div><div class="${x.err?'err':'det'}">${esc(x.text)}</div></div><button class="x" data-rm="${esc(x.f.id)}" aria-label="빼기">×</button></li>`).join('');
+  $('#fileList').innerHTML = perFile.map(x=>`<li><div style="min-width:0"><div class="fn">${esc(x.f.name)}</div><div class="${x.err?'err':'det'}">${esc(x.text)}${x.f.at?` · ${new Date(x.f.at).toTimeString().slice(0,5)} 올림`:''}</div></div><button class="x" data-rm="${esc(x.f.id)}" aria-label="빼기">×</button></li>`).join('');
   $('#clearBtn').hidden = !files.length;
-  $('#fileList').querySelectorAll('[data-rm]').forEach(b=>b.onclick=()=>{ files=files.filter(f=>f.id!==b.dataset.rm); render(); });
+  $('#fileList').querySelectorAll('[data-rm]').forEach(b=>b.onclick=()=>{ files=files.filter(f=>f.id!==b.dataset.rm); render(); runSave(); });
   const cards = C.ORDER.map(co=>{
     const C0=C.COS[co], r=results[co];
     if(!r) return `<article class="co"><div class="co-h"><h3>${C0.label}</h3><span class="pill idle">원본 없음</span></div>
@@ -6532,7 +6564,7 @@ render(); renderCmp();
   const use = n => Promise.resolve().then(()=>window.claude?.use?.(n)).catch(()=>null);
   [downloads, db, assets] = await Promise.all([use('downloads'), use('db'), use('assets')]);
   if(db){
-    loadSlots();
+    loadSlots(); runRestore();
     db.doc('daily/config').onSnapshot(s=>{ const d=s.exists&&s.data(); if(d&&Array.isArray(d.stores)&&d.stores.length){ dlCfg={stores:d.stores, aliases:d.aliases||{}, ignore:d.ignore||{}, carOk:d.carOk||{}}; if($('#dlSettings').dataset.dirty!=='1') dlRender(); } }, ()=>{});
     db.collection('dailyDays').onSnapshot(s=>{ dl.hist=s.docs.map(d=>d.data()).filter(x=>x&&x.ship); if(!$('#view-daily').hidden) dlRenderHist(); }, ()=>{});
     db.collection('sukseongLog').onSnapshot(s=>{ ssLogs=s.docs.map(d=>Object.assign({id:d.id},d.data())).filter(x=>x&&x.ship); if(!$('#view-ss').hidden) ssRenderLog(); }, ()=>{});
