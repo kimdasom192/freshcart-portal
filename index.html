@@ -4827,15 +4827,9 @@ span.ck{cursor:default}
         const m = maps.smartfood.src.get(r.code);
         if (!m || !m.dst) { missing.push({ code: r.code, name: r.name, table: 'smartfood' }); continue; }
         let qty = r.qty, price = r.price;
-        // 품명에 [BOX]가 붙은 박스 단위 품목: 수량 × 입수량, 단가 ÷ 입수량 (공급가액은 그대로)
+        // [BOX] 품목도 박스 단위 자사코드로 그대로 올림. 매핑표에 입수량을 직접 넣은 품목만 수량 × 입수량
         const mper = perOf(m);
         if (mper) { qty = r.qty * mper; price = r.price / mper; mark(r.name, mper); }
-        else if (/\[\s*BOX\s*\]/i.test(r.name)) {
-          const all = [...r.name.matchAll(/\*\s*(\d+)\s*[A-Za-z가-힣]*\s*\/\s*B(?:O)?X/gi)];
-          const per = all.length ? +all[all.length - 1][1] : 0;
-          if (per > 0) { qty = r.qty * per; price = r.price / per; (rows.boxed = rows.boxed || []).push(r.name + ' ×' + per); }
-          else (rows.notes = rows.notes || []).push(r.name + ' (입수량을 찾지 못해 박스 그대로)');
-        }
         const row = base(m.dst, r.name, null, qty, price, r.sup, r.vat, null); row[0] = r.date; rows.push(row);
         if (r.keep && r.keep !== '일배품') (rows.notes = rows.notes || []).push(r.name + ' (' + r.keep + ')');
       }
@@ -4882,7 +4876,7 @@ span.ck{cursor:default}
   }
   const PARTNER = { macho: '오션베리', gourmet: '스웩베리', smartfood: '스마트푸드' };
   const CO_LABEL = { macho: '마초', gourmet: '고메', smartfood: '스마트푸드' };
-  /* 스마트푸드 입고내역 (스마트푸드 전산): 매출량 기준, [BOX] 품목은 수량×입수량 */
+  /* 스마트푸드 입고내역 (스마트푸드 전산): 매출량 기준, [BOX] 품목도 수량 그대로 */
   function detectSmartfoodIn(aoa) {
     let h = -1, cols = [];
     for (let i = 0; i < Math.min(aoa.length, 10); i++) { const r = (aoa[i] || []).map(str); if (r.includes('입고요청일') && r.includes('품목코드') && r.includes('매출량')) { h = i; cols = r; break; } }
@@ -4894,7 +4888,6 @@ span.ck{cursor:default}
       const m = str(r[ix.d]).match(/^(\d{4})-(\d{2})-(\d{2})/); if (!m) continue;
       const code = str(r[ix.code]); if (!code) continue;
       const name = str(r[ix.name]); let qty = num(r[ix.qty]), price = num(r[ix.price]), boxed = false;
-      if (/\[\s*BOX\s*\]/i.test(name)) { const a = [...name.matchAll(/\*\s*(\d+)\s*[A-Za-z가-힣]*\s*\/\s*B(?:O)?X/gi)]; const per = a.length ? +a[a.length - 1][1] : 0; if (per > 0) { qty *= per; price /= per; boxed = true; } }
       rows.push({ boxed, date: `${m[1]}/${m[2]}/${m[3]}`, slip: '', code, name, qty, price, sup: num(r[ix.sup]), vat: num(r[ix.vat]), memo: '', store: str(r[ix.store]) });
     }
     const d = rows.map(r => r.date).sort();
@@ -5753,7 +5746,7 @@ function renderCmp(){
   const hasDaily = F.buy && (F.store || F.fc);
   const hasMonth = isO && ((F.buyM && F.storeM) || (F.ledger && F.fc));
   if(!hasDaily && !hasMonth){ cmpRes=null; $('#cmpReport').disabled=true;
-    $('#cmpOut').innerHTML=`<div class="note">${any?`비교하려면 짝이 되는 자료가 더 필요합니다. ${isO?'일배는 구매현황 + 매장 판매현황(또는 프카 판매현황), 월마감은 월마감 구매현황 + 생마차·태토 매장 판매현황, 오션원장 + 프카 판매현황이 짝입니다.':P+' 구매현황과 비교할 판매현황을 함께 올려주세요.'}`:`비교할 자료를 올리면 수량·단가·합계 차이를 바로 보여줍니다. ${cmpCo==='smartfood'?'스마트푸드 입고내역과 프카 판매현황 2개를 올리면 일자·품목별로 비교합니다. 품목코드는 스마트푸드 매핑표로 맞추고, [BOX] 품목은 수량×입수량으로 바꿔 비교합니다.':isO?'월중에는 일배(마초·태토 사용분) 자료 3개, 월말에는 월마감 구매현황·생마차/태토 매장 판매현황·오션원장을 더 올리면 업체별로 모두 비교합니다.':'고메는 품목코드를 그대로 비교합니다.'}`}</div>`; return; }
+    $('#cmpOut').innerHTML=`<div class="note">${any?`비교하려면 짝이 되는 자료가 더 필요합니다. ${isO?'일배는 구매현황 + 매장 판매현황(또는 프카 판매현황), 월마감은 월마감 구매현황 + 생마차·태토 매장 판매현황, 오션원장 + 프카 판매현황이 짝입니다.':P+' 구매현황과 비교할 판매현황을 함께 올려주세요.'}`:`비교할 자료를 올리면 수량·단가·합계 차이를 바로 보여줍니다. ${cmpCo==='smartfood'?'스마트푸드 입고내역과 프카 판매현황 2개를 올리면 일자·품목별로 비교합니다. 품목코드는 스마트푸드 매핑표로 맞추고, 수량은 그대로 비교합니다 (매핑표에 입수량을 넣은 품목만 수량×입수량).':isO?'월중에는 일배(마초·태토 사용분) 자료 3개, 월말에는 월마감 구매현황·생마차/태토 매장 판매현황·오션원장을 더 올리면 업체별로 모두 비교합니다.':'고메는 품목코드를 그대로 비교합니다.'}`}</div>`; return; }
   // 오션베리 일배 비교에는 프카 판매현황 중 마초 전표(마초전표·마초전표_태)만 사용
   const Fd = Object.assign({}, F, { fc: F.fc && isO ? Object.assign({}, F.fc, {rows: F.fc.rows.filter(r=>r.brand==='macho')}) : F.fc });
   // 두 자료에 모두 들어 있는 날짜끼리만 합계를 내서 비교
@@ -5856,7 +5849,7 @@ function renderCmp(){
   }
   if(R.s2){
     const det=R.s2.detail;
-    html+=`<section class="sec"><div class="sec-h"><h2>${cmpCo==='smartfood'?'스마트푸드 입고 ↔ 프카 판매':'② 구매전표 ↔ 프카 판매전표'}</h2><p class="small muted">${cmpCo==='macho'?'구매 품목코드를 마초 매핑으로 바꿔 비교':cmpCo==='smartfood'?'스마트푸드 코드를 스마트푸드 매핑으로 바꿔 비교 · [BOX] 품목은 수량×입수량':'품목코드 그대로 비교'} · 차이 = 프카판매 − ${cmpCo==='smartfood'?'스마트푸드 입고':'구매'}</p></div>`;
+    html+=`<section class="sec"><div class="sec-h"><h2>${cmpCo==='smartfood'?'스마트푸드 입고 ↔ 프카 판매':'② 구매전표 ↔ 프카 판매전표'}</h2><p class="small muted">${cmpCo==='macho'?'구매 품목코드를 마초 매핑으로 바꿔 비교':cmpCo==='smartfood'?'스마트푸드 코드를 스마트푸드 매핑으로 바꿔 비교 · 수량 그대로':'품목코드 그대로 비교'} · 차이 = 프카판매 − ${cmpCo==='smartfood'?'스마트푸드 입고':'구매'}</p></div>`;
     if(R.s2.unmapped.length){ const tb=cmpCo==='smartfood'?'smartfood':'macho';
       html+=`<div class="miss"><h4>${cmpCo==='smartfood'?'스마트푸드':'마초'} 매핑표에 없는 품목 ${R.s2.unmapped.length}개 · 여기서 바로 등록하면 다시 비교합니다</h4><div class="small muted">자사 품목코드를 넣고, 단위가 다르면 입수량(원본 1단위 = 자사 몇 개)도 넣으세요. 등록한 매핑은 업로드 만들기에도 똑같이 쓰입니다.</div>`+
         R.s2.unmapped.map(u=>`<div class="miss-item"><div class="nm"><span class="num">${esc(u.code)}</span> ${esc(u.name||'')}</div><form class="mini cmpmap" data-table="${tb}" data-src="${esc(u.code)}" data-name="${esc(u.name||'')}"><input name="dst" value="${esc(u.code)}" placeholder="자사 품목코드" aria-label="자사 품목코드"><input name="per" inputmode="decimal" placeholder="입수량 (같으면 비움)" aria-label="입수량" style="width:130px"><button class="btn sm primary">추가</button></form></div>`).join('')+`</div>`; }
