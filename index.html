@@ -7631,7 +7631,17 @@ function checklistHTML() {
   }).join("") : `<div class="empty-day">${M.routines.length ? "이 요일에 등록된 반복 업무가 없습니다." : "‘반복 업무 설정’에서 요일별 반복 업무를 등록하면 매일 자동으로 체크리스트가 만들어집니다."}</div>`;
   return head + body + `
     <form class="inline-add" id="ckAdd"><select id="ckG" aria-label="그룹">${groups().map(g => `<option>${esc(g)}</option>`).join("")}</select><input type="text" id="ckT" placeholder="이 날만 할 일 추가" aria-label="이 날만 할 일"><button class="btn sm" type="submit">추가</button></form>
+    <div class="cat-tg"><button type="button" class="lnk" data-act="ckg-edit" aria-expanded="${!!M.ckEdit}">${M.ckEdit ? "분류 편집 닫기" : "분류 추가·편집"}</button></div>${ckGroupEditHTML()}
     <div class="memo-box"><label for="dayMemo">메모</label><textarea id="dayMemo" placeholder="특이사항, 누락, 확인할 것 등">${esc(d.memo || "")}</textarea><small id="memoSt"></small></div>`;
+}
+/* 체크리스트 분류(그룹): 체크리스트에서 바로 추가·이름 바꾸기·삭제 — 반복 업무 설정의 그룹과 같음 */
+function ckGroupEditHTML() {
+  if (!M.ckEdit) return "";
+  const gs = groups();
+  return `<div class="cat-ed"><div class="cat-ed-h"><b>체크리스트 분류</b><small>이름을 고치면 그 분류의 반복 업무도 같이 바뀝니다 · 반복 업무가 있는 분류는 지울 수 없습니다</small></div>
+    <div class="cat-ed-l">${gs.map((g, i) => { const n = M.routines.filter(r => (r.group || "기타") === g).length;
+      return `<span class="cat-it"><span class="cat k${i % 6}" aria-hidden="true">&nbsp;</span><input type="text" id="cg-${i}" data-g="${esc(g)}" class="gname" value="${esc(g)}" aria-label="분류 이름"><small>반복 ${n}</small>${n ? "" : `<button type="button" class="xb" data-act="g-del" data-g="${esc(g)}" aria-label="분류 삭제">×</button>`}</span>`; }).join("")}</div>
+    <form class="inline-add" id="ckgAdd"><input type="text" id="ckgNew" placeholder="새 분류 (예: 재고 확인)" aria-label="새 분류"><button class="btn sm" type="submit">분류 추가</button></form></div>`;
 }
 function catPill(c) { if (!c) return ""; const i = tcats().indexOf(c); return `<span class="cat${i >= 0 ? " k" + (i % 6) : ""}">${esc(c)}</span>`; }
 function saveCats(list) {
@@ -7775,6 +7785,7 @@ document.addEventListener("click", e => {
     case "cal-now": M.calMonth = ym(todayStr()); subCal(); render(); break;
     case "cal-pick": M.tab = "desk"; setMyDate(a.dataset.date); render(); break;
     case "my-list": M.list = a.dataset.v; M.edit = null; render(); break;
+    case "ckg-edit": M.ckEdit = !M.ckEdit; render(); if (M.ckEdit) { const f = document.getElementById("ckgNew"); f && f.focus(); } break;
     case "cat-edit": M.catEdit = !M.catEdit; render(); if (M.catEdit) { const f = document.getElementById("catNew"); f && f.focus(); } break;
     case "cat-del": { const c = a.dataset.c;
       if (M.arm !== "cat" + c) { M.arm = "cat" + c; render(); setTimeout(() => { if (M.arm === "cat" + c) { M.arm = null; render(); } }, 3000); break; }
@@ -7799,12 +7810,13 @@ document.addEventListener("click", e => {
 });
 document.addEventListener("submit", e => {
   const f = e.target;
-  if (["ckAdd", "tdAdd", "logForm", "gAdd", "mmAdd", "catAdd"].includes(f.id) || f.classList.contains("td-form")) e.preventDefault();
+  if (["ckAdd", "tdAdd", "logForm", "gAdd", "mmAdd", "catAdd", "ckgAdd"].includes(f.id) || f.classList.contains("td-form")) e.preventDefault();
   if (f.id === "ckAdd") { const t = $("#ckT").value.trim(); if (!t) return; const g = $("#ckG").value; M.focus = "ckT"; changeDay(d => { d.items.push({ id: "x-" + Date.now().toString(36), t, g, done: false, at: Date.now() }); return d; }); }
   else if (f.id === "tdAdd") { const t = $("#tdT").value.trim(); if (!t) return; M.focus = "tdT"; const dd = $("#tdD").value; addTodo(t, dd, $("#tdC").value); if (dd && dd !== M.date && M.list === "day") toast(`${mdw(dd)} 업무로 등록했습니다.`); }
   else if (f.classList.contains("td-form")) { const id = f.dataset.id; const patch = { title: f.querySelector(".e-t").value.trim(), date: f.querySelector(".e-d").value, cat: f.querySelector(".e-c").value, memo: f.querySelector(".e-m").value.trim() }; M.edit = null; patchTodo(id, patch); }
   else if (f.id === "logForm") doLog(f.dataset.id);
   else if (f.id === "gAdd") { const g = $("#gNew").value.trim(); if (!g || groups().includes(g)) return; saveGroups([...groups(), g]); }
+  else if (f.id === "ckgAdd") { const g = $("#ckgNew").value.trim(); if (!g) return; if (groups().includes(g)) { toast("같은 이름의 분류가 있습니다."); return; } M.focus = "ckgNew"; saveGroups([...groups(), g]); render(); toast(`'${g}' 분류를 추가했습니다.`); }
   else if (f.id === "catAdd") { const c = $("#catNew").value.trim(); if (!c) return; if (tcats().includes(c)) { toast("같은 이름의 분류가 있습니다."); return; } M.focus = "catNew"; saveCats([...tcats(), c]); toast(`'${c}' 분류를 추가했습니다.`); }
   else if (f.id === "mmAdd") { const t = $("#mmT").value.trim(); if (!t) return; M.focus = "mmT"; addMonthly(t, $("#mmD").value, $("#mmC").value); }
 });
