@@ -8467,14 +8467,20 @@ function yymmdd(y,m,d,base){if(!(m>=1&&m<=12&&d>=1&&d<=31))return "";let Y=y;
     const t=Date.UTC(Y,m-1,d);if(isFinite(b)&&t<b-200*DAY)Y++;else if(isFinite(b)&&t>b+500*DAY)Y--;}
   return String(Y%100).padStart(2,"0")+String(m).padStart(2,"0")+String(d).padStart(2,"0");}
 function parseQuick(text,items,base){
-  const out=[];
+  const out=[];let last=null;
   for(const raw of String(text||"").split(/\n|;/)){const line=raw.trim();if(!line)continue;
     let t=line.replace(/(\d+)\s*월\s*(\d+)\s*일?/g,"$1/$2").replace(/(\d)\s+(박스|박|bx|box|개|ea|pk|팩|p|b)(?![가-힣a-z])/gi,"$1$2");
-    const tk=t.split(/[\s,]+/).filter(Boolean);
-    let i=0;const name=[];
-    while(i<tk.length&&!/^\d/.test(tk[i]))name.push(tk[i++]);
-    if(!name.length&&i<tk.length&&/^\d{5,}(-\d+)?$/.test(tk[i])&&items.some(it=>it.code===tk[i]||(it.links||[]).some(l=>str(l.code)===tk[i])))name.push(tk[i++]);
-    const f=findItem(name.join(" "),items);
+    const all=t.split(/[\s,]+/).filter(Boolean);
+    /* 품목 이름은 줄 어디에 있어도 됨(앞·뒤), 품목코드도 이름으로 봄 · 이름이 없으면 바로 윗줄 품목 */
+    const isCode=x=>/^\d{5,}(-\d+)?$/.test(x)&&items.some(it=>it.code===x||(it.links||[]).some(l=>str(l.code)===x));
+    const name=[],tk=[];
+    for(const x of all){if(!/^\d/.test(x)||(!name.length&&isCode(x)))name.push(x);else tk.push(x);}
+    let i=0;
+    let f;
+    let carried=false;
+    if(name.length){f=findItem(name.join(" "),items);last=f.item||null;}
+    else if(last){f={item:last};carried=true;}
+    else f={err:"품목 이름을 적어 주세요 (윗줄 품목을 찾지 못해 이어 쓸 수 없습니다)"};
     const ents=[];let err=f.err||"";
     const isQ=s=>/^\d+(\.\d+)?(박스|박|bx|box|b|개|ea|pk|팩|p)$/i.test(s);
     const unitOf=s=>/(박스|박|bx|box|b)$/i.test(s)?"bx":"pk";
@@ -8494,7 +8500,7 @@ function parseQuick(text,items,base){
       if(!got){err="수량이 없습니다 ("+exp.slice(2,4)+"/"+exp.slice(4)+")";break;}
     }
     if(!err&&!ents.length)err="소비기한과 수량을 적어 주세요";
-    out.push({line,item:f.item||null,entries:err?[]:ents,err});
+    out.push({line,item:f.item||null,entries:err?[]:ents,err,carried});
   }
   return out;
 }
@@ -8571,8 +8577,8 @@ function render(){
       ${X.pend?`<div class="note warn xpend">${esc(X.pend.file)}에 현장 입력이 ${X.pend.items.length}품목 들어 있습니다. 지금 입력한 내용을 이 엑셀 내용으로 바꿀까요? <button class="btn sm primary" type="button" id="exPendY">엑셀 내용으로 바꾸기</button><button class="btn sm" type="button" id="exPendN">지금 입력 유지</button></div>`:""}
     </div>
     ${!X.items.length?`<div class="panel2 xquick"><div class="qhead"><h2>빠른 입력</h2></div><p class="pnote" style="margin:6px 0 0">점검 품목이 아직 없어서 빠른 입력을 쓸 수 없습니다. 위 <b>자료</b> 칸에 점검 엑셀(소비기한 시트가 있는 파일)을 올리거나, 맨 아래 <b>점검 품목 추가</b>에서 품목을 넣으면 이 칸이 열립니다.</p></div>`:""}
-    ${X.items.length?`<div class="panel2 xquick"><div class="qhead"><h2>빠른 입력</h2><span class="muted small">한 줄에 한 품목 · <b>품목 이름 일부 · 소비기한 · 수량</b></span></div>
-      <textarea id="exQuick" rows="4" placeholder="스위트 11 1 6개&#10;단호박 11/15 2박스 3개 11/20 5박스&#10;콘 1118 4박스" aria-label="빠른 입력">${esc(X.quick)}</textarea>
+    ${X.items.length?`<div class="panel2 xquick"><div class="qhead"><h2>빠른 입력</h2><span class="muted small"><b>품목 이름 일부 · 소비기한 · 수량</b> (순서 상관없음) · 이름을 빼면 윗줄 품목으로 이어서 입력</span></div>
+      <textarea id="exQuick" rows="4" placeholder="스위트 11 1 6개&#10;11 25 1박스&#10;참치 11 1 1개&#10;1118 4박스 콘" aria-label="빠른 입력">${esc(X.quick)}</textarea>
       <div id="exQPrev">${quickPrev()}</div>
       <div class="acts2"><span class="muted small">숫자만 적으면 낱개(개) · 박스는 ‘박스·bx’를 붙여 주세요 · 같은 소비기한을 다시 적으면 새 수량으로 바뀝니다</span><span class="sp"></span><button class="btn primary" type="button" id="exQGo">반영</button></div></div>`:""}
     ${S.items?`<div class="xsum">
@@ -8663,7 +8669,7 @@ function quickPrev(){
     const by=new Map();for(const e of x.entries){const v=by.get(e.exp)||[];v.push(e);by.set(e.exp,v);}
     const parts=[...by].map(([d,es])=>{const pk=es.reduce((a,e)=>a+(e.unit==="bx"?e.qty*box:e.qty),0);
       return `<span class="num">${+d.slice(2,4)}/${+d.slice(4)}</span> ${esc(es.map(e=>e.qty+(e.unit==="bx"?"박스":"개")).join(" "))}${box>1&&(es.some(e=>e.unit==="bx")||pk>=box)?` <small class="muted">= 낱개 ${esc(pk)}개${es.some(e=>e.unit==="bx")?"":" ("+esc(EXP.fmtPk(pk,box,"개"))+")"}</small>`:""}`;}).join(" · ");
-    return `<li><b class="okc">✓</b> ${esc(nm(it))} <small class="muted">${esc(it.code)}</small> · ${parts}</li>`;}).join("")}</ul>`;
+    return `<li><b class="okc">✓</b> ${x.carried?`<small class="muted">↳ 윗줄</small> `:""}${esc(nm(it))} <small class="muted">${esc(it.code)}</small> · ${parts}</li>`;}).join("")}</ul>`;
 }
 function quickApply(){
   const L=EXP.parseQuick(X.quick,X.items,X.base);const ok=L.filter(x=>!x.err),bad=L.filter(x=>x.err);
