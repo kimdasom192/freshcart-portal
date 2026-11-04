@@ -6858,6 +6858,7 @@ function resolveNames(ids) {
 function render() {
   renderRail();
   renderNav();
+  fixView();
   if (S.view === "me") { renderMy(); return; }
   // 편집 중인 업무가 있으면 입력 내용이 사라지지 않도록 시트는 그대로 둠
   if (S.editing && document.getElementById("tf-" + S.editing)) return;
@@ -7550,9 +7551,13 @@ function goLog(taskId, W, body) {
   render();
   setTimeout(() => { const f = document.getElementById("tf-" + taskId); if (f) f.scrollIntoView({ block: "center", behavior: "smooth" }); }, 60);
 }
+/* 포털에서 정한 권한: 주간 업무일지(log)·업무확인(me) 따로 */
+const allowV = () => window.__logAllow || { log: true, me: true };
+function fixView() { const A = allowV(); if (S.view === "me" && !A.me) S.view = "log"; if (S.view !== "me" && !A.log && A.me) S.view = "me"; }
 window.__logView = v => { try { setView(v); } catch (e) {} };
 function setView(v) {
-  if (S.view === v) return;
+  const A = allowV(); if (v === "me" && !A.me) v = "log"; if (v !== "me" && !A.log && A.me) v = "me";
+  if (S.view === v) { render(); return; }
   if (v === "log" && S.editing) S.editing = null;
   S.view = v; M.edit = null;
   try { localStorage.setItem("wl-view", v); } catch (e) {}
@@ -7568,8 +7573,9 @@ function renderNav() {
   const nav = $("#vnav"); if (!nav) return;
   const p = myReady() && M.date === todayStr() ? dayProgress() : null;
   const open = myReady() ? visibleTodos().filter(t => !t.done && t.date && t.date <= todayStr()).length : 0;
-  nav.innerHTML = `<button class="vbtn" data-act="view" data-v="log" aria-pressed="${S.view !== "me"}">${ICON_TEAM}<span class="vt"><b>주간 업무일지</b><small>팀 공유 · 주 1회 보고</small></span></button>
-    ${S.meId ? `<button class="vbtn" data-act="view" data-v="me" aria-pressed="${S.view === "me"}">${ICON_CHECK}<span class="vt"><b>업무확인</b><small><span class="lock">${ICON_LOCK}나만 보기</span>${p ? ` · 오늘 ${p.done}/${p.n}` : ""}${open ? ` · 할 일 ${open}` : ""}</small></span></button>` : ""}`;
+  const A = allowV();
+  nav.innerHTML = `${A.log ? `<button class="vbtn" data-act="view" data-v="log" aria-pressed="${S.view !== "me"}">${ICON_TEAM}<span class="vt"><b>주간 업무일지</b><small>팀 공유 · 주 1회 보고</small></span></button>` : ""}
+    ${S.meId && A.me ? `<button class="vbtn" data-act="view" data-v="me" aria-pressed="${S.view === "me"}">${ICON_CHECK}<span class="vt"><b>업무확인</b><small><span class="lock">${ICON_LOCK}나만 보기</span>${p ? ` · 오늘 ${p.done}/${p.n}` : ""}${open ? ` · 할 일 ${open}` : ""}</small></span></button>` : ""}`;
   const hide = S.view === "me";
   $("#pMembers").hidden = hide; $("#pRecords").hidden = hide;
 }
@@ -7948,7 +7954,7 @@ const WD=["일","월","화","수","목","금","토"];
 const md=s=>{const d=pd(s);return `${d.getUTCMonth()+1}/${d.getUTCDate()}(${WD[d.getUTCDay()]})`;};
 const due=(s,td)=>{if(!s)return "";const n=gap(td,s);return n<0?`<span class="hb late">${-n}일 지남</span>`:n===0?`<span class="hb now">오늘</span>`:`<span class="hb">${n===1?"내일":"D-"+n}</span>`;};
 const ST={new:"신규",progress:"진행중"};
-const go=v=>`href="#worklog" data-wl="${v}"`;
+const go=v=>`href="#${v==="me"?"checklist":"worklog"}" data-wl="${v}"`;
 let seq=0;
 async function safe(p){try{return await p;}catch(e){return null;}}
 
@@ -7961,7 +7967,7 @@ window.HOME={async fill(el,ctx){
     ctx.privateOk&&pid?safe(db.doc(`data/users/${pid}/my/days/${td}`).get()):null,
     ctx.privateOk&&pid?safe(db.collection(`data/users/${pid}/my/routines`).get()):null,
     ctx.privateOk&&pid?safe(db.collection(`data/users/${pid}/my/todos`).get()):null,
-    lp?safe(db.collection(`logs/${lp}/tasks`).get()):null]);
+    lp&&ctx.teamLog!==false?safe(db.collection(`logs/${lp}/tasks`).get()):null]);
   if(my!==seq)return;
 
   /* 1. 오늘 체크리스트 */
@@ -7992,7 +7998,7 @@ window.HOME={async fill(el,ctx){
 
   /* 3. 이번 주 업무일지 */
   let lg="";
-  if(lp){
+  if(lp&&ctx.teamLog!==false){
     const T=(tasks?tasks.docs.map(d=>d.data()):[]).filter(t=>t&&t.status!=="done"&&(t.startWeek||"")<=W&&(t.title||"").trim());
     T.sort((a,b)=>(a.dueDate?0:1)-(b.dueDate?0:1)||String(a.dueDate||"").localeCompare(String(b.dueDate||""))||(a.status==="progress"?0:1)-(b.status==="progress"?0:1));
     const pr=T.filter(t=>t.status==="progress").length,nw=T.length-pr;
@@ -8751,14 +8757,18 @@ const PERMS=[
   {k:"close.ss",g:"마감",l:"숙성도 발주"},
   {k:"close.daily",g:"마감",l:"일일배송"},
   {k:"close.map",g:"마감",l:"매핑표 관리"},
-  {k:"log",g:"업무",l:"업무일지"}];
+  {k:"log",g:"업무",l:"주간 업무일지"},
+  {k:"check",g:"업무",l:"업무확인 (체크리스트)"},
+  {k:"quote",g:"관리",l:"견적서"},
+  {k:"expiry",g:"관리",l:"소비기한 점검"}];
 const ALL=PERMS.map(p=>p.k);
-const GROUPS=["재고·마진","마감","업무"];
+const GROUPS=["재고·마진","마감","업무","관리"];
 const PRESETS=[
   {l:"전체 메뉴",keys:ALL},
-  {l:"마감 담당",keys:["close.run","close.cmp","close.ss","close.daily","close.map","log"]},
-  {l:"보고 열람",keys:["slow","rep","log"]},
-  {l:"업무일지만",keys:["log"]}];
+  {l:"마감 담당",keys:["close.run","close.cmp","close.ss","close.daily","close.map","log","check"]},
+  {l:"보고 열람",keys:["slow","rep","log","check"]},
+  {l:"업무일지·업무확인",keys:["log","check"]},
+  {l:"업무확인만",keys:["check"]}];
 const closeTabsOf=k=>[...k].filter(x=>x.startsWith("close.")).map(x=>x.slice(6));
 const VIEWS=[
   {v:"home",l:"홈",hash:"home"},
@@ -8767,13 +8777,14 @@ const VIEWS=[
   {v:"up",l:"자료 올리기",hash:"upload-all",g:"재고·마진",need:k=>k.has("uni"),d:"이카운트 판매·구매현황, 재고변동표, 고메 매장별 판매를 한 번에 반영"},
   {v:"rep",l:"매출 보고서",hash:"sales-report",g:"재고·마진",need:k=>k.has("rep"),d:"업체별 마감금액(공급가·부가세·합계)과 계산서 발행, 품목 마진율"},
   {v:"close",l:"마감 업로드",hash:"close",g:"마감",need:k=>closeTabsOf(k).length>0,d:"원본을 올리면 업체별 이카운트 업로드 파일, 마감 비교, 숙성도·일일배송"},
-  {v:"log",l:"업무일지",hash:"worklog",g:"업무",need:k=>k.has("log"),d:"주간 업무일지 작성·보고, 나만 보는 업무확인 체크리스트"},
-  {v:"quote",l:"견적서",hash:"quote",owner:1,g:"관리",d:"품목 정보를 넣으면 대표님 보고용과 거래처 전달용 견적서, 타겟가 비교까지"},
-  {v:"expiry",l:"소비기한 점검",hash:"expiry",owner:1,g:"관리",d:"현재고와 입고 소비기한, 현장 수량을 비교해 재고 차이·선입선출·임박 품목 확인 (나만 보기)"},
+  {v:"log",l:"업무일지",hash:"worklog",g:"업무",need:k=>k.has("log"),d:"주간 업무일지 작성·보고, 팀 공유"},
+  {v:"check",l:"업무확인",hash:"checklist",g:"업무",need:k=>k.has("check"),d:"각자 만들어 쓰는 체크리스트·업무리스트 (나만 보기)"},
+  {v:"quote",l:"견적서",hash:"quote",g:"관리",need:k=>k.has("quote"),d:"품목 정보를 넣으면 대표님 보고용과 거래처 전달용 견적서, 타겟가 비교까지"},
+  {v:"expiry",l:"소비기한 점검",hash:"expiry",g:"관리",need:k=>k.has("expiry"),d:"현재고와 입고 소비기한, 현장 수량을 비교해 재고 차이·선입선출·임박 품목 확인 (각자 따로 저장)"},
   {v:"users",l:"사용자·권한",hash:"people",owner:1,g:"관리"}];
 const MT=["margin","suggest","prices","changes","link","upload"];
 function hashToView(h){if(!h||h==="home")return "home";if(h==="slow")return "slow";if(MT.includes(h))return "margin";
-  if(h==="upload-all")return "up";if(h==="sales-report")return "rep";if(h==="close")return "close";if(h==="worklog")return "log";if(h==="people")return "users";if(h==="quote")return "quote";if(h==="expiry")return "expiry";return "home";}
+  if(h==="upload-all")return "up";if(h==="sales-report")return "rep";if(h==="close")return "close";if(h==="worklog")return "log";if(h==="checklist")return "check";if(h==="people")return "users";if(h==="quote")return "quote";if(h==="expiry")return "expiry";return "home";}
 
 const P={db:null,user:null,owner:false,canEdit:null,uid:null,name:"",keys:new Set(),hash:"",preview:null,list:[],ready:false,view:"home",delAsk:null};
 const keys=()=>P.preview?P.preview.keys:P.keys;
@@ -8803,7 +8814,7 @@ function ensure(v){
     if(v==="slow")window.INV.mountSlow();
     else if(v==="margin"||v==="rep")window.INV.mountMargin();
     else if(v==="close"){loadAppData().then(()=>{try{window.CLOSE_APP(fakeDoc2(mountMod("hostClose","tplClose")));syncTheme();}catch(e){console.error(e);toast("마감 화면을 여는 중 문제가 생겼습니다. 자료 가져오기를 했는지 확인해 주세요");}});}
-    else if(v==="log")window.LOG_APP(fakeDoc2(mountMod("hostLog","tplLog")));
+    else if(v==="log"||v==="check"){if(!on.logM){on.logM=1;logAllow();window.LOG_APP(fakeDoc2(mountMod("hostLog","tplLog")));}}
   }catch(e){console.error(e);toast("화면을 여는 중 문제가 생겼습니다. 새로고침해 주세요");}
   syncTheme();
 }
@@ -8815,9 +8826,10 @@ function route(){
   if(!P.ready)return;
   let v=hashToView(location.hash.slice(1));if(!allowed(v))v="home";
   P.view=v;
-  for(const id in SHOW)$(id).hidden=SHOW[id]!==v;
+  for(const id in SHOW)$(id).hidden=!(SHOW[id]===v||(id==="hostLog"&&v==="check"));
   if(v!=="home"&&v!=="users"&&v!=="quote"&&v!=="expiry")ensure(v);
   if(v==="expiry"&&window.EXPIRY)window.EXPIRY.show();
+  if(v==="log"||v==="check"){logAllow();if(window.__logView)window.__logView(v==="check"?"me":"log");}
   if(v==="quote"&&window.QUOTE)window.QUOTE.show();
   if(v==="up")window.INV.renderUni();
   if(v==="rep"&&window.REP)window.REP.show();
@@ -8826,6 +8838,8 @@ function route(){
   renderNav();window.scrollTo(0,0);
 }
 window.addEventListener("hashchange",route);
+/* 업무일지 모듈 안에서 보일 화면: 주간 업무일지(log) · 업무확인(check) 권한 따로 */
+function logAllow(){const k=keys();window.__logAllow={log:k.has("log"),me:k.has("check")&&!P.preview};}
 function renderNav(){
   let h="",lastG=null;
   for(const d of VIEWS){if(!allowed(d.v))continue;
@@ -8882,7 +8896,7 @@ function renderHome(){
       <p>내 업무확인 체크리스트·업무리스트와 이번 주 업무일지에서 오늘 할 일을 모았습니다.</p></div>
     <section id="hToday"></section>
     <div class="mgrid">${cards}</div></div>`;
-  if(window.HOME)window.HOME.fill(document.getElementById("hToday"),{db:FC.db,pid:FC.profile&&FC.profile.pid,logPid:P.preview?P.preview.pid:(FC.profile&&FC.profile.pid),privateOk:!P.preview,preview:P.preview&&P.preview.name,hasLog:k.has("log")});
+  if(window.HOME)window.HOME.fill(document.getElementById("hToday"),{db:FC.db,pid:FC.profile&&FC.profile.pid,logPid:P.preview?P.preview.pid:(FC.profile&&FC.profile.pid),privateOk:!P.preview&&k.has("check"),preview:P.preview&&P.preview.name,hasLog:k.has("log")||k.has("check"),teamLog:k.has("log")});
 }
 
 
@@ -8965,7 +8979,11 @@ function openPw(){
 /* ---------- 사용자·권한 (관리자) ---------- */
 let LOGS=[];
 function loadUsers(){
-  unsubUsers=FC.fs.collection("users").onSnapshot(q=>{P.list=q.docs.map(d=>Object.assign({uid:d.id},d.data())).sort((a,b)=>(a.createdAt||0)-(b.createdAt||0));if(P.view==="users")renderUsers();},()=>{});
+  unsubUsers=FC.fs.collection("users").onSnapshot(q=>{P.list=q.docs.map(d=>Object.assign({uid:d.id},d.data())).sort((a,b)=>(a.createdAt||0)-(b.createdAt||0));
+    /* 업무확인 권한이 따로 생기기 전부터 업무일지를 쓰던 사람은 업무확인도 그대로 쓰게 한 번만 옮겨 줌 */
+    for(const x of P.list){if(x.role!=="admin"&&!x.checkSet&&(x.menus||[]).includes("log")&&!(x.menus||[]).includes("check"))
+      FC.fs.doc("users/"+x.uid).update({menus:[...x.menus,"check"],checkSet:true}).catch(()=>{});}
+    if(P.view==="users")renderUsers();},()=>{});
   FC.db.collection("logs").get().then(q=>{LOGS=q.docs.map(d=>({id:d.id,name:(d.data()||{}).name||""}));if(P.view==="users")renderUsers();}).catch(()=>{});
 }
 function permBoxes(prefix,sel){return GROUPS.map(g=>`<fieldset><legend>${esc(g)}</legend>${PERMS.filter(p=>p.g===g).map(p=>
@@ -8976,7 +8994,7 @@ async function createAccount(d){
   const sec=firebase.apps.find(a=>a.name==="creator")||firebase.initializeApp(FC.CFG,"creator");
   const cred=await sec.auth().createUserWithEmailAndPassword(toEmail(d.id),d.pw);
   const uid=cred.user.uid;
-  await FC.fs.doc("users/"+uid).set({name:d.name,loginId:d.id.toLowerCase(),role:"user",menus:d.menus,active:true,pid:d.link||uid,createdAt:Date.now()});
+  await FC.fs.doc("users/"+uid).set({name:d.name,loginId:d.id.toLowerCase(),role:"user",menus:d.menus,active:true,checkSet:true,pid:d.link||uid,createdAt:Date.now()});
   await sec.auth().signOut();
 }
 const saveUser=(uid,patch)=>FC.fs.doc("users/"+uid).update(patch).then(()=>toast("저장했습니다")).catch(()=>toast("저장하지 못했습니다. 잠시 뒤 다시 해 주세요"));
