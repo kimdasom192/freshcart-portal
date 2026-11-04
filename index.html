@@ -330,6 +330,12 @@ button,input,select{font:inherit;color:inherit}
 .xsum>button[aria-selected="true"] i{color:var(--forest);font-weight:700}
 .xtt{font-size:16px;margin:0}.xtd{margin:0 0 8px}
 .xtbl td.small{line-height:1.7}
+.xdl{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin:1px 0}
+.xdbtn{padding:1px 8px!important;font-size:11.5px!important}
+.xdform{display:flex;flex-wrap:wrap;gap:6px 8px;align-items:center;margin:6px 0 8px;padding:8px 10px;border:1px solid var(--warn);background:var(--warn-soft);border-radius:8px;font-size:12.5px}
+.xdform input[type=date],.xdform select{font:inherit;padding:4px 6px;border:1px solid var(--line);border-radius:6px;background:var(--surface);color:var(--ink)}
+.xdsum{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 10px}.xdsum>span{border:1px solid var(--line);background:var(--surface);border-radius:8px;padding:5px 10px;font-size:13px}
+.xdadd{margin-top:14px}.xdadd h2{margin:0 0 8px}.xdadd select{font:inherit;padding:7px 8px;border:1px solid var(--line);border-radius:8px;background:var(--surface);color:var(--ink)}
 
 /* 통합 메뉴 띠 */
 .hub{background:var(--sunk);border-bottom:1px solid var(--line)}
@@ -8531,10 +8537,27 @@ const esc=s=>String(s==null?"":s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;"
 function toast(t){const el=document.createElement("div");el.className="ptoast";el.textContent=t;document.body.appendChild(el);setTimeout(()=>el.remove(),2600);}
 const today=()=>new Intl.DateTimeFormat("en-CA",{timeZone:"Asia/Seoul"}).format(new Date());
 const md=s=>s?`${+s.slice(5,7)}/${+s.slice(8,10)}`:"";
-const X={tab:"need",quick:"",lnk:{},on:false,items:[],days:7,base:today(),stock:null,buy:null,open:new Set(),only:true,pend:null,timer:null,loaded:false,add:{code:"",per:""},del:null};
+const X={disp:[],dform:null,dmon:"",dadd:{code:"",exp:"",qty:"",unit:"pk",reason:"소비기한 지남",memo:""},tab:"need",quick:"",lnk:{},on:false,items:[],days:7,base:today(),stock:null,buy:null,open:new Set(),only:true,pend:null,timer:null,loaded:false,add:{code:"",per:""},del:null};
 const db=()=>window.FC&&window.FC.db, pid=()=>window.FC&&window.FC.profile&&window.FC.profile.pid;
 const docA=()=>db().doc(`data/users/${pid()}/expiry`), docB=()=>db().doc(`data/users/${pid()}/expiryData`);
+/* 폐기 기록: data/users/<나>/expiryDisposal/<id> */
+const dispCol=()=>db().collection(`data/users/${pid()}/expiryDisposal`);
+let dispSub=null;
+function subDisp(){if(dispSub)return;try{dispSub=dispCol().onSnapshot(q=>{X.disp=q.docs.map(d=>Object.assign({id:d.id},d.data())).sort((a,b)=>(b.date||"").localeCompare(a.date||"")||(b.at||0)-(a.at||0));render();},()=>{});}catch(e){}}
+const REASONS=["소비기한 지남","소비기한 임박","파손·변질","반품 불가","기타"];
+async function addDisp(rec,minus){
+  try{await dispCol().doc().set(rec);}catch(e){toast("폐기 기록을 저장하지 못했습니다");return false;}
+  if(minus){const it=X.items.find(i=>i.code===rec.code);if(it){
+    const R=EXP.compute([it],X.stock,X.buy,X.base,X.days).rows[0];const box=R.per||1;
+    const cur=(R.fieldRows.find(x=>x.date===rec.exp)||{}).field||0;const left=Math.max(0,Math.round((cur-rec.qty)*100)/100);
+    const yy=rec.exp.slice(2,4)+rec.exp.slice(5,7)+rec.exp.slice(8,10);
+    it.entries=(it.entries||[]).filter(e=>EXP.parseExp(e.exp)!==rec.exp);
+    if(left>0){const b=box>1?Math.floor(left/box+1e-9):0,m=Math.round((left-b*box)*100)/100;if(b)it.entries.push({exp:yy,unit:"bx",qty:b});if(m)it.entries.push({exp:yy,unit:"pk",qty:m});}
+    saveA(true);}}
+  toast(`${(rec.name||rec.code).split("_")[0]} ${rec.qtyText} 폐기 기록`);return true;
+}
 async function load(){
+  subDisp();
   try{const [a,b]=await Promise.all([docA().get(),docB().get()]);
     if(a.exists){const d=a.data()||{};X.items=d.items||[];X.days=d.days||7;}
     if(b.exists){const d=b.data()||{};X.stock=d.stock||null;X.buy=d.buy||null;}}catch(e){toast("저장된 점검 자료를 불러오지 못했습니다");}
@@ -8597,12 +8620,12 @@ function render(){
       <div id="exQPrev">${quickPrev()}</div>
       <div class="acts2"><span class="muted small">숫자만 적으면 낱개(개) · 박스는 ‘박스·bx’를 붙여 주세요 · 같은 소비기한을 다시 적으면 새 수량으로 바뀝니다</span><span class="sp"></span><button class="btn primary" type="button" id="exQGo">반영</button></div></div>`:""}
     ${S.items?`<div class="xsum" role="tablist" aria-label="점검 결과">
-      ${[["stock","재고가 안 맞는 품목",S.stock,"bad"],["fifo","선입선출 의심",S.fifo,"warn"],["exp","소비기한 임박·지남",S.exp,"warn"],["none","현장 미기재",S.none,""],["memo","입력 확인 필요",S.memo,""],["all","점검 품목 전체",S.items,""]]
+      ${[["stock","재고가 안 맞는 품목",S.stock,"bad"],["fifo","선입선출 의심",S.fifo,"warn"],["exp","소비기한 임박·지남",S.exp,"warn"],["none","현장 미기재",S.none,""],["memo","입력 확인 필요",S.memo,""],["all","점검 품목 전체",S.items,""],["disp","폐기 기록 (이번 달)",X.disp.filter(d=>(d.date||"").slice(0,7)===X.base.slice(0,7)).length,""]]
         .map(([k,l,n,c])=>`<button type="button" role="tab" class="${n&&c?c:""}" data-tab="${k}" aria-selected="${X.tab===k}"><span>${l}</span><b>${n}</b><i>${X.tab===k?"보는 중":"눌러서 보기"}</i></button>`).join("")}</div>
-    <div class="acts2 xbar"><h2 class="xtt">${esc(TABS[X.tab].t)} <span class="muted">${tabRows(R,X.tab).length}품목</span></h2>${X.tab!=="need"?`<button type="button" class="btn sm" data-tab="need">확인 필요 전체로</button>`:""}
+    ${X.tab==="disp"?dispHtml():`<div class="acts2 xbar"><h2 class="xtt">${esc(TABS[X.tab].t)} <span class="muted">${tabRows(R,X.tab).length}품목</span></h2>${X.tab!=="need"?`<button type="button" class="btn sm" data-tab="need">확인 필요 전체로</button>`:""}
       <span class="sp"></span>${ok?`<span class="xok">✓ 모든 품목이 정상입니다</span>`:""}<button class="btn" type="button" id="exXlsx">점검표 엑셀 받기</button></div>
     <p class="muted small xtd">${esc(TABS[X.tab].d)}</p>
-    ${tabTable(R)}`
+    ${tabTable(R)}`}`
     :`<p class="pnote">점검할 품목이 없습니다. 지금 쓰시는 점검 엑셀을 올리거나, 아래에서 품목을 추가해 주세요.</p>`}
     <form class="panel2 xadd" id="exAdd" autocomplete="off"><h2>점검 품목 추가</h2>
       <div class="acts2"><input type="text" id="exAddCode" class="sel" list="exCodes" placeholder="품목코드" value="${esc(X.add.code)}" aria-label="품목코드"><input type="text" id="exAddPer" class="sel" inputmode="decimal" placeholder="입수량 (박스당 낱개 수, 낱개 관리면 1)" value="${esc(X.add.per)}" aria-label="입수량" style="width:240px"><button class="btn primary" type="submit">추가</button>
@@ -8642,11 +8665,57 @@ function tabTable(R){
   if(t==="exp")return `<div class="ptbl xtbl"><table><thead><tr><th>품목코드</th><th>품목명</th><th>판정</th><th class="r">임박·지남 수량</th><th>현장에 남은 소비기한</th></tr></thead><tbody>${rows.length?rows.map(r=>{
       const end=X.days;const ls=r.fieldRows.filter(x=>x.field>0).map(x=>({...x,l:leftOf(x.date)})).sort((a,b)=>a.date.localeCompare(b.date));
       return `<tr>${code(r)}<td>${pill(r.expJ)}</td><td class="r num"><b>${esc(F(r.expQty,r))}</b></td>
-      <td class="small">${ls.map(x=>`<span class="${x.l<0?"xneg":x.l<=end?"xwarn":"muted"}"><span class="num">${dd(x.date)}</span> ${esc(F(x.field,r))} (${x.l<0?`${-x.l}일 지남`:x.l===0?"오늘까지":`${x.l}일 남음`})</span>`).join("<br>")}</td></tr>${drill(r,5)}`;}).join(""):empty(5)}</tbody></table></div>`;
+      <td class="small">${ls.map(x=>{const on=X.dform&&X.dform.code===r.code&&X.dform.exp===x.date;
+        return `<div class="xdl"><span class="${x.l<0?"xneg":x.l<=end?"xwarn":"muted"}"><span class="num">${dd(x.date)}</span> ${esc(F(x.field,r))} (${x.l<0?`${-x.l}일 지남`:x.l===0?"오늘까지":`${x.l}일 남음`})</span>${x.l<=end?` <button type="button" class="btn sm xdbtn" data-dopen="${esc(r.code)}|${x.date}|${x.field}">폐기</button>`:""}</div>${on?dformHtml(r,x):""}`;}).join("")}</td></tr>${drill(r,5)}`;}).join(""):empty(5)}</tbody></table></div>`;
   if(t==="memo"||t==="none")return `<div class="ptbl xtbl"><table><thead><tr><th>품목코드</th><th>품목명</th><th class="r">전산 현재고</th><th>확인할 것</th></tr></thead><tbody>${rows.length?rows.map(r=>`<tr>${code(r)}
       <td class="r num">${esc(F(r.stock,r))||"-"}</td><td class="small">${t==="none"?"현장 수량 미입력":[...r.entries.filter(e=>e.memo).map(e=>`현장 ${esc(e.exp||"(소비기한 없음)")} ${esc(e.qty)}${esc(e.unit||"")}: ${esc(e.memo)}`),...r.buys.filter(b=>b.memo).map(b=>`입고 ${dd(b.d)} 적요 '${esc(b.raw||"")}': ${esc(b.memo)}`)].join("<br>")}</td></tr>${drill(r,4)}`).join(""):empty(4)}</tbody></table></div>`;
   return `<div class="ptbl xtbl"><table><thead><tr><th>품목코드</th><th>품목명</th><th class="r">전산 현재고</th><th class="r">현장 수량</th><th class="r">차이</th><th>재고</th><th>선입선출</th><th>가장 빠른 소비기한</th><th class="r">남은 일수</th><th>소비기한</th><th>확인 메모</th></tr></thead>
       <tbody>${rows.length?rows.map(r=>rowHtml(r)).join(""):`<tr><td colspan="11" class="hempty">${t==="need"?"확인이 필요한 품목이 없습니다.":"점검 품목이 없습니다."}</td></tr>`}</tbody></table></div>`;
+}
+function dformHtml(r,x){const f=X.dform;const box=r.per||1;
+  return `<form class="xdform" id="exDForm" autocomplete="off"><b>폐기 기록</b>
+    <label>폐기일 <input type="date" id="exDDate" value="${esc(f.date)}"></label>
+    <label>수량 <input type="text" id="exDQty" class="xin r num" style="width:64px" inputmode="decimal" value="${esc(f.qty)}"></label>
+    <select id="exDUnit" aria-label="단위"><option value="pk"${f.unit==="pk"?" selected":""}>개</option>${box>1?`<option value="bx"${f.unit==="bx"?" selected":""}>박스 (${box}개)</option>`:""}</select>
+    <select id="exDReason" aria-label="사유">${REASONS.map(x=>`<option${x===f.reason?" selected":""}>${x}</option>`).join("")}</select>
+    <input type="text" id="exDMemo" class="xin" style="width:160px" placeholder="메모 (선택)" value="${esc(f.memo||"")}">
+    <label class="small"><input type="checkbox" id="exDMinus" ${f.minus!==false?"checked":""}> 현장 수량에서 빼기</label>
+    <button class="btn sm primary" type="submit">기록</button><button class="btn sm" type="button" id="exDCancel">취소</button>
+    <span class="muted small">현장 ${esc(F(x.field,r))} 중</span></form>`;}
+function dispHtml(){
+  const mons=[...new Set([X.base.slice(0,7),...X.disp.map(d=>(d.date||"").slice(0,7)).filter(Boolean)])].sort().reverse();
+  const mon=X.dmon&&mons.includes(X.dmon)?X.dmon:(X.dmon==="all"?"all":mons[0]);
+  const L=mon==="all"?X.disp:X.disp.filter(d=>(d.date||"").slice(0,7)===mon);
+  const by=new Map();for(const d of L){const k=d.code;const v=by.get(k)||{code:d.code,name:d.name,qty:0,n:0,per:d.per||1};v.qty+=d.qty||0;v.n++;by.set(k,v);}
+  const fmt=(q,per)=>EXP.fmtPk(Math.round(q*100)/100,per||1,"개");
+  const a=X.dadd;const it=X.items.find(i=>i.code===a.code);
+  return `<div class="acts2 xbar"><h2 class="xtt">폐기 기록 <span class="muted">${L.length}건</span></h2><button type="button" class="btn sm" data-tab="need">확인 필요 전체로</button>
+      <span class="sp"></span><select id="exDMon" class="sel" aria-label="달">${mons.map(m=>`<option value="${m}"${m===mon?" selected":""}>${+m.slice(0,4)}년 ${+m.slice(5)}월</option>`).join("")}<option value="all"${mon==="all"?" selected":""}>전체 기간</option></select>
+      <button class="btn" type="button" id="exDXlsx"${L.length?"":" disabled"}>폐기 기록 엑셀 받기</button></div>
+    <p class="muted small xtd">‘소비기한 임박·지남’에서 폐기를 누르거나 아래에서 직접 기록합니다. 기록은 본인 계정에만 저장됩니다.</p>
+    ${by.size?`<div class="xdsum">${[...by.values()].sort((x,y)=>y.qty-x.qty).map(v=>`<span><b>${esc((v.name||v.code).split("_")[0])}</b> ${esc(fmt(v.qty,v.per))} <small class="muted">${v.n}건</small></span>`).join("")}</div>`:""}
+    <div class="ptbl xtbl"><table><thead><tr><th>폐기일</th><th>품목코드</th><th>품목명</th><th>소비기한</th><th class="r">수량</th><th>사유</th><th>메모</th><th>기록</th><th></th></tr></thead><tbody>
+      ${L.length?L.map(d=>`<tr><td class="num">${esc(d.date)}</td><td class="num">${esc(d.code)}</td><td class="nm">${esc(d.name)}</td><td class="num">${esc(d.exp||"-")}</td><td class="r num"><b>${esc(d.qtyText||fmt(d.qty,d.per))}</b></td>
+        <td>${esc(d.reason||"")}</td><td class="small">${esc(d.memo||"")}</td><td class="small muted">${d.at?new Date(d.at).toLocaleString("ko-KR",{month:"numeric",day:"numeric",hour:"2-digit",minute:"2-digit"}):""}</td>
+        <td>${X.ddel===d.id?`<button type="button" class="btn sm danger" data-ddelok="${esc(d.id)}">삭제?</button>`:`<button type="button" class="x" data-ddel="${esc(d.id)}" aria-label="기록 삭제">×</button>`}</td></tr>`).join(""):`<tr><td colspan="9" class="hempty">이 기간 폐기 기록이 없습니다.</td></tr>`}</tbody></table></div>
+    <form class="panel2 xdadd" id="exDAdd" autocomplete="off"><h2>폐기 직접 기록</h2><div class="acts2">
+      <select id="exDaCode" class="sel" aria-label="품목"><option value="">품목 선택</option>${X.items.map(i=>`<option value="${esc(i.code)}"${i.code===a.code?" selected":""}>${esc((i.name||i.code).split("_")[0])} · ${esc(i.code)}</option>`).join("")}</select>
+      <input type="text" id="exDaExp" class="xin num" style="width:130px" placeholder="소비기한 261101" value="${esc(a.exp)}" aria-label="소비기한">
+      <input type="text" id="exDaQty" class="xin r num" style="width:64px" placeholder="수량" inputmode="decimal" value="${esc(a.qty)}" aria-label="수량">
+      <select id="exDaUnit" aria-label="단위"><option value="pk"${a.unit==="pk"?" selected":""}>개</option><option value="bx"${a.unit==="bx"?" selected":""}>박스${it&&it.per>1?` (${it.per}개)`:""}</option></select>
+      <select id="exDaReason" aria-label="사유">${REASONS.map(x=>`<option${x===a.reason?" selected":""}>${x}</option>`).join("")}</select>
+      <input type="text" id="exDaMemo" class="xin" style="width:180px" placeholder="메모 (선택)" value="${esc(a.memo)}">
+      <button class="btn primary" type="submit">기록</button></div><p class="muted small" style="margin:6px 0 0">폐기일은 기준일(${esc(X.base)})로 기록되고, 현장 수량에서도 같이 빠집니다.</p></form>`;
+}
+async function dispXlsx(){
+  const mon=$("exDMon")?$("exDMon").value:"all";const L=mon==="all"?X.disp:X.disp.filter(d=>(d.date||"").slice(0,7)===mon);
+  const wb=new ExcelJS.Workbook();const ws=wb.addWorksheet("폐기 기록");
+  const thin={style:"thin",color:{argb:"FF8C8C8C"}},box={top:thin,left:thin,bottom:thin,right:thin},font={name:"맑은 고딕",size:10};
+  const H=[["폐기일",11],["품목코드",11],["품목명",32],["소비기한",11],["수량",12],["수량(낱개)",10],["사유",13],["메모",28]];
+  ws.mergeCells(1,1,1,H.length);ws.getCell(1,1).value=`폐기 기록 · ${mon==="all"?"전체 기간":(+mon.slice(0,4))+"년 "+(+mon.slice(5))+"월"} · ${L.length}건`;ws.getCell(1,1).font={name:"맑은 고딕",size:14,bold:true};
+  H.forEach((h,i)=>{ws.getColumn(i+1).width=h[1];const x=ws.getCell(3,i+1);x.value=h[0];x.font=Object.assign({},font,{bold:true});x.fill={type:"pattern",pattern:"solid",fgColor:{argb:"FFF2F2F2"}};x.border=box;x.alignment={horizontal:"center"};});
+  L.slice().sort((a,b)=>(a.date||"").localeCompare(b.date||"")).forEach((d,i)=>[d.date,d.code,d.name,d.exp,d.qtyText,d.qty,d.reason,d.memo||""].forEach((v,j)=>{const x=ws.getCell(4+i,j+1);x.value=v;x.font=Object.assign({},font);x.border=box;}));
+  const buf=await wb.xlsx.writeBuffer();const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([buf]));a.download=`폐기기록_${mon==="all"?"전체":mon.replace("-","")}.xlsx`;document.body.appendChild(a);a.click();setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove();},4000);
 }
 function rowHtml(r){
   const o=X.open.has(r.code);
@@ -8725,6 +8794,26 @@ function quickApply(){
   X.quick=bad.map(x=>x.line).join("\n");saveA(true);render();toast(`${ok.length}줄 반영${bad.length?` · 확인할 줄 ${bad.length}개 남김`:""}`);
 }
 function bind(R){
+  /* 폐기 */
+  const rt=$("pExpiry");
+  rt.querySelectorAll("[data-dopen]").forEach(b=>b.onclick=()=>{const [c,d,q]=b.dataset.dopen.split("|");X.dform={code:c,exp:d,qty:q,unit:"pk",reason:leftOf(d)<0?"소비기한 지남":"소비기한 임박",memo:"",date:X.base,minus:true};render();const f=$("exDQty");if(f){f.focus();f.select();}});
+  const df=$("exDForm");if(df){$("exDCancel").onclick=()=>{X.dform=null;render();};
+    df.onsubmit=async e=>{e.preventDefault();const f=X.dform,it=X.items.find(i=>i.code===f.code);const per=Math.max(Number(it&&it.per)||1,...((it&&it.links)||[]).map(l=>Number(l.mul)||0));
+      const q=Number(String($("exDQty").value).replace(/,/g,""));if(!(q>0)){toast("폐기 수량을 숫자로 입력해 주세요");return;}
+      const unit=$("exDUnit").value,pk=unit==="bx"?q*per:q;
+      const rec={date:$("exDDate").value||X.base,code:f.code,name:(it&&it.name)||"",exp:f.exp,qty:pk,per,qtyText:EXP.fmtPk(pk,per,"개"),reason:$("exDReason").value,memo:$("exDMemo").value.trim(),at:Date.now()};
+      if(await addDisp(rec,$("exDMinus").checked)){X.dform=null;render();}};}
+  const dm=$("exDMon");if(dm)dm.onchange=()=>{X.dmon=dm.value;render();};
+  const dx=$("exDXlsx");if(dx)dx.onclick=()=>dispXlsx().catch(()=>toast("엑셀을 만들지 못했습니다"));
+  rt.querySelectorAll("[data-ddel]").forEach(b=>b.onclick=()=>{X.ddel=b.dataset.ddel;render();setTimeout(()=>{if(X.ddel===b.dataset.ddel){X.ddel=null;render();}},3000);});
+  rt.querySelectorAll("[data-ddelok]").forEach(b=>b.onclick=async()=>{const id=b.dataset.ddelok;X.ddel=null;try{await dispCol().doc(id).delete();toast("폐기 기록을 지웠습니다");}catch(e){toast("지우지 못했습니다");}});
+  const da=$("exDAdd");if(da){const keep=()=>{X.dadd={code:$("exDaCode").value,exp:$("exDaExp").value.trim(),qty:$("exDaQty").value.trim(),unit:$("exDaUnit").value,reason:$("exDaReason").value,memo:$("exDaMemo").value};};
+    da.addEventListener("input",keep);da.addEventListener("change",e=>{keep();if(e.target.id==="exDaCode")render();});
+    da.onsubmit=async e=>{e.preventDefault();keep();const a=X.dadd,it=X.items.find(i=>i.code===a.code);if(!it){toast("품목을 골라 주세요");return;}
+      const exp=EXP.parseExp(a.exp);if(!exp){toast("소비기한을 261101처럼 입력해 주세요");return;}
+      const q=Number(String(a.qty).replace(/,/g,""));if(!(q>0)){toast("폐기 수량을 숫자로 입력해 주세요");return;}
+      const per=Math.max(Number(it.per)||1,...(it.links||[]).map(l=>Number(l.mul)||0)),pk=a.unit==="bx"?q*per:q;
+      if(await addDisp({date:X.base,code:it.code,name:it.name||"",exp,qty:pk,per,qtyText:EXP.fmtPk(pk,per,"개"),reason:a.reason,memo:a.memo.trim(),at:Date.now()},true)){X.dadd={code:"",exp:"",qty:"",unit:"pk",reason:"소비기한 지남",memo:""};render();}};}
   const root=$("pExpiry");
   const fi=$("exIn"),dr=$("exDrop");
   fi.onchange=()=>{readFiles([...fi.files]);fi.value="";};
