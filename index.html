@@ -4589,6 +4589,18 @@ span.ck{cursor:default}
 .cat.k0{background:var(--prog-soft);color:var(--prog);border-color:transparent}
 .cat.k1{background:var(--new-soft);color:var(--new);border-color:transparent}
 .cat.k2{background:var(--done-soft);color:var(--done);border-color:transparent}
+.cat.k3{background:var(--late-soft);color:var(--late);border-color:transparent}
+.cat.k4{background:var(--danger-soft);color:var(--danger);border-color:transparent}
+.cat.k5{background:var(--surface-2);color:var(--ink);border-color:var(--line-strong)}
+.cat-tg{margin:2px 0 8px;text-align:right}
+.lnk{border:0;background:none;color:var(--forest);font-size:12.5px;font-weight:600;cursor:pointer;padding:2px 0;text-decoration:underline;text-underline-offset:3px}
+.cat-ed{border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin-bottom:12px;background:var(--surface-2)}
+.cat-ed-h{display:flex;gap:8px;align-items:baseline;flex-wrap:wrap;margin-bottom:8px}.cat-ed-h small{color:var(--muted);flex:1}
+.cat-ed-l{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px}
+.cat-it{display:inline-flex;align-items:center;gap:4px;border:1px solid var(--line);border-radius:8px;padding:3px 4px 3px 8px;background:var(--surface)}
+.cat-it input{border:0;background:transparent;font:inherit;font-size:13px;width:7em;color:var(--ink);padding:2px}
+.cat-it input:focus{outline:1px solid var(--forest);border-radius:4px}
+.cat-it small{color:var(--muted);font-size:11px}
 .dt{font-family:var(--f-mono);color:var(--muted)}
 .late-t{color:var(--danger);font-weight:600}
 .mtag{color:var(--late);font-weight:600}
@@ -7275,6 +7287,8 @@ async function exportXlsx() {
 const DOWK = ["일", "월", "화", "수", "목", "금", "토"];
 const DAY_ORDER = [1, 2, 3, 4, 5, 6, 0];
 const TODO_CATS = ["특이사항", "견적", "발주", "메모"];
+/* 업무확인 분류: 사람마다 추가·이름 바꾸기·삭제 (내 설정에 저장) */
+const tcats = () => (M.settings && Array.isArray(M.settings.todoCats)) ? M.settings.todoCats : TODO_CATS;
 const GROUPS_DEFAULT = ["발주/전표/마감", "출력/검수", "전표등록", "기타"];
 const ICON_LOCK = `<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><rect x="3" y="7" width="10" height="7" rx="1.5"/><path d="M5.5 7V5a2.5 2.5 0 0 1 5 0v2"/></svg>`;
 const ICON_TEAM = `<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><rect x="3" y="3" width="14" height="14" rx="2"/><path d="M3 8h14M8 8v9"/></svg>`;
@@ -7583,11 +7597,24 @@ function checklistHTML() {
     <form class="inline-add" id="ckAdd"><select id="ckG" aria-label="그룹">${groups().map(g => `<option>${esc(g)}</option>`).join("")}</select><input type="text" id="ckT" placeholder="이 날만 할 일 추가" aria-label="이 날만 할 일"><button class="btn sm" type="submit">추가</button></form>
     <div class="memo-box"><label for="dayMemo">메모</label><textarea id="dayMemo" placeholder="특이사항, 누락, 확인할 것 등">${esc(d.memo || "")}</textarea><small id="memoSt"></small></div>`;
 }
-function catPill(c) { if (!c) return ""; const i = TODO_CATS.indexOf(c); return `<span class="cat${i >= 0 && i < 3 ? " k" + i : ""}">${esc(c)}</span>`; }
+function catPill(c) { if (!c) return ""; const i = tcats().indexOf(c); return `<span class="cat${i >= 0 ? " k" + (i % 6) : ""}">${esc(c)}</span>`; }
+function saveCats(list) {
+  M.settings = { ...(M.settings || {}), todoCats: list };
+  myWrite("s", () => myDoc().set({ ...M.settings, updatedAt: Date.now() }));
+  render();
+}
+function catEditHTML() {
+  if (!M.catEdit) return "";
+  const cs = tcats();
+  const used = c => M.todos.filter(t => t.cat === c && !t.hidden).length + M.monthly.filter(m => m.cat === c).length;
+  return `<div class="cat-ed"><div class="cat-ed-h"><b>분류 편집</b><small>이름을 고치면 이미 등록한 업무에도 같이 바뀝니다</small><button type="button" class="btn sm" data-act="cat-edit">닫기</button></div>
+    <div class="cat-ed-l">${cs.map((c, i) => `<span class="cat-it"><span class="cat k${i % 6}" aria-hidden="true">&nbsp;</span><input type="text" id="cr-${i}" data-catr="${esc(c)}" value="${esc(c)}" aria-label="분류 이름"><small>${used(c)}건</small><button type="button" class="xb${M.arm === "cat" + c ? " arm" : ""}" data-act="cat-del" data-c="${esc(c)}" aria-label="분류 삭제">${M.arm === "cat" + c ? "삭제?" : "×"}</button></span>`).join("")}</div>
+    <form class="inline-add" id="catAdd"><input type="text" id="catNew" placeholder="새 분류 (예: 품질)" aria-label="새 분류"><button class="btn sm" type="submit">분류 추가</button></form></div>`;
+}
 function todoHTML(t, opts = {}) {
   if (M.edit === t.id) return `<div class="td"><form class="td-form" id="tdf-${esc(t.id)}" data-id="${esc(t.id)}">
       <input type="text" class="e-t" value="${esc(t.title)}" placeholder="업무" aria-label="업무">
-      <div class="r"><input type="date" class="e-d" value="${esc(t.date || "")}" aria-label="날짜"><select class="e-c" aria-label="분류"><option value="">분류 없음</option>${TODO_CATS.map(c => `<option${c === t.cat ? " selected" : ""}>${c}</option>`).join("")}</select></div>
+      <div class="r"><input type="date" class="e-d" value="${esc(t.date || "")}" aria-label="날짜"><select class="e-c" aria-label="분류"><option value="">분류 없음</option>${tcats().map(c => `<option${c === t.cat ? " selected" : ""}>${c}</option>`).join("")}</select></div>
       <textarea class="e-m" placeholder="메모 (진행 상황, 참고 사항)" aria-label="메모">${esc(t.memo || "")}</textarea>
       <div class="actions" style="justify-content:flex-end"><button type="button" class="btn ghost sm" data-act="td-cancel">취소</button><button class="btn primary sm" type="submit">저장</button></div></form></div>`;
   const late = !t.done && t.date && t.date < M.date ? Math.round((pd(M.date) - pd(t.date)) / 864e5) : 0;
@@ -7602,7 +7629,7 @@ function todoPaneHTML() {
   const td = todayStr();
   const all = visibleTodos();
   const byDate = (a, b) => (a.date || "9999").localeCompare(b.date || "9999") || (a.createdAt || 0) - (b.createdAt || 0);
-  const add = `<form class="td-add" id="tdAdd"><input type="text" class="t" id="tdT" placeholder="업무 추가 (예: 이너피스 마감금액 확인)" aria-label="업무"><div class="r"><input type="date" id="tdD" value="${M.date}" aria-label="날짜"><select id="tdC" aria-label="분류"><option value="">분류 없음</option>${TODO_CATS.map(c => `<option>${c}</option>`).join("")}</select><button class="btn primary sm" type="submit" style="margin-left:auto">추가</button></div></form>`;
+  const add = `<form class="td-add" id="tdAdd"><input type="text" class="t" id="tdT" placeholder="업무 추가 (예: 이너피스 마감금액 확인)" aria-label="업무"><div class="r"><input type="date" id="tdD" value="${M.date}" aria-label="날짜"><select id="tdC" aria-label="분류"><option value="">분류 없음</option>${tcats().map(c => `<option>${c}</option>`).join("")}</select><button class="btn primary sm" type="submit" style="margin-left:auto">추가</button></div></form>`;
   const head = `<div class="pane-h"><h2>업무리스트</h2><span class="seg2" role="group" aria-label="목록"><button data-act="my-list" data-v="day" aria-pressed="${M.list === "day"}">이 날</button><button data-act="my-list" data-v="open" aria-pressed="${M.list === "open"}">미완료 전체</button><button data-act="my-list" data-v="done" aria-pressed="${M.list === "done"}">완료</button></span></div>`;
   let body = "";
   if (M.list === "day") {
@@ -7621,7 +7648,7 @@ function todoPaneHTML() {
     const done = all.filter(t => t.done).sort((a, b) => (b.doneAt || "").localeCompare(a.doneAt || "")).slice(0, 80);
     body = `<div class="sec">${done.length ? done.map(t => todoHTML(t, { showDate: true })).join("") : `<div class="empty-day">완료한 업무가 아직 없습니다.</div>`}</div>`;
   }
-  return head + add + body;
+  return head + add + `<div class="cat-tg"><button type="button" class="lnk" data-act="cat-edit" aria-expanded="${!!M.catEdit}">${M.catEdit ? "분류 편집 닫기" : "분류 추가·편집"}</button></div>` + catEditHTML() + body;
 }
 function routinesHTML() {
   const gs = groups();
@@ -7640,7 +7667,7 @@ function routinesHTML() {
     const next = M.todos.filter(t => t.mid === mm.id && !t.done && !t.hidden).sort((a, b) => a.date.localeCompare(b.date))[0];
     return `<div class="mrow"><input type="text" id="mm-${esc(mm.id)}" data-mm="${esc(mm.id)}" value="${esc(mm.title || "")}" aria-label="매월 업무">
       <select data-mmd="${esc(mm.id)}" aria-label="날짜">${days.map(d => `<option value="${d}"${Number(mm.day) === d ? " selected" : ""}>매월 ${d}일</option>`).join("")}<option value="0"${!mm.day ? " selected" : ""}>매월 말일</option></select>
-      <select data-mmc="${esc(mm.id)}" aria-label="분류"><option value="">분류 없음</option>${TODO_CATS.map(c => `<option${c === mm.cat ? " selected" : ""}>${c}</option>`).join("")}</select>
+      <select data-mmc="${esc(mm.id)}" aria-label="분류"><option value="">분류 없음</option>${tcats().map(c => `<option${c === mm.cat ? " selected" : ""}>${c}</option>`).join("")}</select>
       <button class="xb${M.arm === "mm" + mm.id ? " arm" : ""}" data-act="mm-del" data-id="${esc(mm.id)}" aria-label="삭제">${M.arm === "mm" + mm.id ? "삭제?" : "×"}</button>
       <div class="nx">${next ? `다음: ${esc(mdw(next.date))}` : "이번 달·다음 달 업무 생성됨"}</div></div>`;
   }).join("");
@@ -7650,7 +7677,7 @@ function routinesHTML() {
       <form class="inline-add" id="gAdd"><input type="text" id="gNew" placeholder="새 그룹 이름 (예: 월말 업무)" aria-label="새 그룹"><button class="btn sm" type="submit">그룹 추가</button></form></section>
     <section class="pane"><div class="pane-h"><h2>매월 반복 업무</h2><p class="sub">정한 날짜의 업무리스트에 매달 자동으로 들어갑니다 (이번 달·다음 달분이 미리 생성). 말일이 짧은 달은 그 달 마지막 날로 잡힙니다.</p></div>
       ${mrows || `<div class="empty-day">등록한 매월 반복 업무가 없습니다.</div>`}
-      <form class="inline-add" id="mmAdd"><input type="text" id="mmT" placeholder="예: 월말 재고금액 보고" aria-label="매월 업무"><select id="mmD" aria-label="날짜">${days.map(d => `<option value="${d}">${d}일</option>`).join("")}<option value="0">말일</option></select><select id="mmC" aria-label="분류"><option value="">분류 없음</option>${TODO_CATS.map(c => `<option>${c}</option>`).join("")}</select><button class="btn sm" type="submit">추가</button></form></section>
+      <form class="inline-add" id="mmAdd"><input type="text" id="mmT" placeholder="예: 월말 재고금액 보고" aria-label="매월 업무"><select id="mmD" aria-label="날짜">${days.map(d => `<option value="${d}">${d}일</option>`).join("")}<option value="0">말일</option></select><select id="mmC" aria-label="분류"><option value="">분류 없음</option>${tcats().map(c => `<option>${c}</option>`).join("")}</select><button class="btn sm" type="submit">추가</button></form></section>
   </div>`;
 }
 /* ----- 달력 ----- */
@@ -7712,6 +7739,10 @@ document.addEventListener("click", e => {
     case "cal-now": M.calMonth = ym(todayStr()); subCal(); render(); break;
     case "cal-pick": M.tab = "desk"; setMyDate(a.dataset.date); render(); break;
     case "my-list": M.list = a.dataset.v; M.edit = null; render(); break;
+    case "cat-edit": M.catEdit = !M.catEdit; render(); if (M.catEdit) { const f = document.getElementById("catNew"); f && f.focus(); } break;
+    case "cat-del": { const c = a.dataset.c;
+      if (M.arm !== "cat" + c) { M.arm = "cat" + c; render(); setTimeout(() => { if (M.arm === "cat" + c) { M.arm = null; render(); } }, 3000); break; }
+      M.arm = null; saveCats(tcats().filter(x => x !== c)); toast(`'${c}' 분류를 지웠습니다. 등록된 업무의 분류 표시는 그대로 남습니다.`); break; }
     case "my-date": setMyDate(addDays(M.date, Number(a.dataset.d))); break;
     case "my-today": setMyDate(todayStr()); break;
     case "my-ck": changeDay(d => { d.items = d.items.map(i => i.id === id ? { ...i, done: !i.done } : i); return d; }); break;
@@ -7732,12 +7763,13 @@ document.addEventListener("click", e => {
 });
 document.addEventListener("submit", e => {
   const f = e.target;
-  if (["ckAdd", "tdAdd", "logForm", "gAdd", "mmAdd"].includes(f.id) || f.classList.contains("td-form")) e.preventDefault();
+  if (["ckAdd", "tdAdd", "logForm", "gAdd", "mmAdd", "catAdd"].includes(f.id) || f.classList.contains("td-form")) e.preventDefault();
   if (f.id === "ckAdd") { const t = $("#ckT").value.trim(); if (!t) return; const g = $("#ckG").value; M.focus = "ckT"; changeDay(d => { d.items.push({ id: "x-" + Date.now().toString(36), t, g, done: false, at: Date.now() }); return d; }); }
   else if (f.id === "tdAdd") { const t = $("#tdT").value.trim(); if (!t) return; M.focus = "tdT"; const dd = $("#tdD").value; addTodo(t, dd, $("#tdC").value); if (dd && dd !== M.date && M.list === "day") toast(`${mdw(dd)} 업무로 등록했습니다.`); }
   else if (f.classList.contains("td-form")) { const id = f.dataset.id; const patch = { title: f.querySelector(".e-t").value.trim(), date: f.querySelector(".e-d").value, cat: f.querySelector(".e-c").value, memo: f.querySelector(".e-m").value.trim() }; M.edit = null; patchTodo(id, patch); }
   else if (f.id === "logForm") doLog(f.dataset.id);
   else if (f.id === "gAdd") { const g = $("#gNew").value.trim(); if (!g || groups().includes(g)) return; saveGroups([...groups(), g]); }
+  else if (f.id === "catAdd") { const c = $("#catNew").value.trim(); if (!c) return; if (tcats().includes(c)) { toast("같은 이름의 분류가 있습니다."); return; } M.focus = "catNew"; saveCats([...tcats(), c]); toast(`'${c}' 분류를 추가했습니다.`); }
   else if (f.id === "mmAdd") { const t = $("#mmT").value.trim(); if (!t) return; M.focus = "mmT"; addMonthly(t, $("#mmD").value, $("#mmC").value); }
 });
 document.addEventListener("change", e => {
@@ -7755,6 +7787,14 @@ document.addEventListener("change", e => {
   else if (t.dataset.mm) { const v = t.value.trim(); const mm = M.monthly.find(x => x.id === t.dataset.mm); if (mm && v && mm.title !== v) patchMonthly(mm.id, { title: v }); }
   else if (t.dataset.mmd) patchMonthly(t.dataset.mmd, { day: Number(t.value) });
   else if (t.dataset.mmc) patchMonthly(t.dataset.mmc, { cat: t.value });
+  else if (t.dataset.catr != null) {
+    const old = t.dataset.catr, nw = t.value.trim();
+    if (!nw || nw === old) { t.value = old; return; }
+    if (tcats().includes(nw)) { toast("같은 이름의 분류가 있습니다."); t.value = old; return; }
+    saveCats(tcats().map(c => c === old ? nw : c));
+    M.todos.filter(x => x.cat === old).forEach(x => patchTodo(x.id, { cat: nw }));
+    M.monthly.filter(x => x.cat === old).forEach(x => patchMonthly(x.id, { cat: nw }));
+  }
 });
 document.addEventListener("input", e => {
   if (e.target.id !== "dayMemo") return;
