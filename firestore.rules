@@ -65,8 +65,8 @@ service cloud.firestore {
     }
     match /notes/{n} { allow read, write: if hasAny(['log']); }
 
-    // 견적서: 관리자 전용
-    match /quotes/{d} { allow read, write: if isAdmin(); }
+    // 견적서: 견적서 권한이 있는 사람끼리 같은 목록을 함께 씀
+    match /quotes/{d} { allow read, write: if hasAny(['quote']); }
 
     // 나만 보는 자료 (업무확인 체크리스트 등)
     match /data/users/{pid}/{rest=**} { allow read, write: if ownPid(pid); }
