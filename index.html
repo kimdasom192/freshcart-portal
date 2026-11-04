@@ -8415,7 +8415,7 @@ function parseField(aoa){
 }
 
 /* 계산: items=[{code,name,per,entries:[{exp,unit,qty}]}], stock, buy(rows), base('YYYY-MM-DD'), days */
-function compute(items,stock,buy,base,days){
+function compute(items,stock,buy,base,days,disp){
   const S=stock&&stock.rows||{},B=buy&&buy.rows||[];
   /* 코드 → 점검 품목: 기준 코드(입수량) + 연결 코드(모코드·자코드, 1단위 = 낱개 n개) */
   const codeOf=new Map();
@@ -8437,6 +8437,10 @@ function compute(items,stock,buy,base,days){
     const codes=[{code:it.code,mul:per,main:true},...links.map(l=>({code:str(l.code),mul:num(l.mul)||0,main:false}))];
     let X=null;const stockBy=[];
     for(const c of codes){const sr=S[c.code];if(!sr)continue;X=r2((X||0)+sr.q*c.mul);stockBy.push({code:c.code,name:sr.name,unit:sr.unit,q:sr.q,mul:c.mul,pk:r2(sr.q*c.mul),main:c.main});}
+    /* 폐기 기록: 재고변동표 기준일 이후(같은 날 포함) 폐기한 수량은 전산 재고에서도 뺌 (이카운트에 아직 반영 전) */
+    const pIso=stock&&stock.period?String(stock.period).replace(/\//g,"-"):"";
+    const dq=r2((disp||[]).filter(d=>d.code===it.code&&(!pIso||(d.date||"")>=pIso)).reduce((a,d)=>a+(num(d.qty)||0),0));
+    if(X!=null&&dq>0)X=r2(X-dq);
     const st=S[it.code]||(stockBy[0]&&S[stockBy[0].code]);
     const unitP="개";
     const ent=(it.entries||[]).map(e=>{const k=unitKind(e.unit),date=parseExp(e.exp);const qty=num(e.qty);
@@ -8466,7 +8470,7 @@ function compute(items,stock,buy,base,days){
     const expJ=Sn===0?"미기재":W>0?"지남":Xs>0?"임박":"정상";
     const eMemo=ent.filter(e=>e.memo).length,bMemo=mine.filter(p=>p.memo).length;
     const memo=[Sn===0?"현장 미입력":"",eMemo?`현장입력 확인 ${eMemo}건`:"",bMemo?`입고기록 확인 ${bMemo}건`:""].filter(Boolean).join(" · ");
-    out.push({code:it.code,name:it.name||(st&&st.name)||"",per:box,basePer:per,links,stockBy,unitP,stock:X,field:R,diff:T,n:Sn,stockJ,fifo:U,fifoJ,first:V,left:V?diffDays(base,V):null,expJ,expQty:r2(W+Xs),memo,eMemo,bMemo,
+    out.push({code:it.code,name:it.name||(st&&st.name)||"",per:box,basePer:per,links,stockBy,dispQty:dq,unitP,stock:X,field:R,diff:T,n:Sn,stockJ,fifo:U,fifoJ,first:V,left:V?diffDays(base,V):null,expJ,expQty:r2(W+Xs),memo,eMemo,bMemo,
       entries:ent,groups:G.slice().sort((a,b)=>a.exp.localeCompare(b.exp)),fieldRows,buys:mine,inStock:!!st});
   }
   const sum={items:out.length,stock:out.filter(x=>x.stockJ==="현장이 적음"||x.stockJ==="현장이 많음").length,fifo:out.filter(x=>x.fifoJ==="의심").length,
@@ -8540,15 +8544,18 @@ const md=s=>s?`${+s.slice(5,7)}/${+s.slice(8,10)}`:"";
 const X={disp:[],dform:null,dmon:"",dadd:{code:"",exp:"",qty:"",unit:"pk",reason:"소비기한 지남",memo:""},tab:"need",quick:"",lnk:{},on:false,items:[],days:7,base:today(),stock:null,buy:null,open:new Set(),only:true,pend:null,timer:null,loaded:false,add:{code:"",per:""},del:null};
 const db=()=>window.FC&&window.FC.db, pid=()=>window.FC&&window.FC.profile&&window.FC.profile.pid;
 const docA=()=>db().doc(`data/users/${pid()}/expiry`), docB=()=>db().doc(`data/users/${pid()}/expiryData`);
-/* 폐기 기록: data/users/<나>/expiryDisposal/<id> */
-const dispCol=()=>db().collection(`data/users/${pid()}/expiryDisposal`);
+/* 폐기 기록: 소비기한 점검 권한이 있는 사람 모두 같이 보는 expiryDisposal/<id> */
+const dispCol=()=>db().collection("expiryDisposal");
+const me=()=>(window.FC&&window.FC.profile)||{};
+const dispErr=e=>toast(e&&(e.code==="not_granted"||e.code==="permission-denied")?"폐기 기록 저장 권한이 없습니다. Firebase 보안 규칙에 폐기 기록 규칙을 추가해 주세요":"폐기 기록을 저장하지 못했습니다");
 let dispSub=null;
-function subDisp(){if(dispSub)return;try{dispSub=dispCol().onSnapshot(q=>{X.disp=q.docs.map(d=>Object.assign({id:d.id},d.data())).sort((a,b)=>(b.date||"").localeCompare(a.date||"")||(b.at||0)-(a.at||0));render();},()=>{});}catch(e){}}
+function subDisp(){if(dispSub)return;try{dispSub=dispCol().onSnapshot(q=>{X.dispOk=true;X.disp=q.docs.map(d=>Object.assign({id:d.id},d.data())).sort((a,b)=>(b.date||"").localeCompare(a.date||"")||(b.at||0)-(a.at||0));render();},()=>{});}catch(e){}}
 const REASONS=["소비기한 지남","소비기한 임박","파손·변질","반품 불가","기타"];
 async function addDisp(rec,minus){
-  try{await dispCol().doc().set(rec);}catch(e){toast("폐기 기록을 저장하지 못했습니다");return false;}
+  rec.by=me().name||"";rec.uid=me().uid||"";
+  try{await dispCol().doc().set(rec);}catch(e){dispErr(e);return false;}
   if(minus){const it=X.items.find(i=>i.code===rec.code);if(it){
-    const R=EXP.compute([it],X.stock,X.buy,X.base,X.days).rows[0];const box=R.per||1;
+    const R=EXP.compute([it],X.stock,X.buy,X.base,X.days,X.disp).rows[0];const box=R.per||1;
     const cur=(R.fieldRows.find(x=>x.date===rec.exp)||{}).field||0;const left=Math.max(0,Math.round((cur-rec.qty)*100)/100);
     const yy=rec.exp.slice(2,4)+rec.exp.slice(5,7)+rec.exp.slice(8,10);
     it.entries=(it.entries||[]).filter(e=>EXP.parseExp(e.exp)!==rec.exp);
@@ -8595,7 +8602,7 @@ function render(){
   const root=$("pExpiry");if(!root)return;
   const act=document.activeElement&&document.activeElement.id;
   if(!X.loaded){root.innerHTML=`<div class="page"><p class="hload">점검 자료를 불러오는 중입니다…</p></div>`;return;}
-  const R=EXP.compute(X.items,X.stock,X.buy,X.base,X.days),S=R.sum;
+  const R=EXP.compute(X.items,X.stock,X.buy,X.base,X.days,X.disp),S=R.sum;
   const need=r=>r.stockJ!=="일치"||r.fifoJ==="의심"||r.expJ==="임박"||r.expJ==="지남"||r.memo;
   const rows=tabRows(R,X.tab);
   const ok=S.items&&!(S.stock+S.fifo+S.exp+S.none+S.memo);
@@ -8656,7 +8663,7 @@ function tabTable(R){
   const code=r=>`<td class="cd"><button type="button" class="drill-btn" data-x="${esc(r.code)}" aria-expanded="${X.open.has(r.code)}">${X.open.has(r.code)?"▾":"▸"} ${esc(r.code)}</button></td><td class="nm">${esc(r.name)}</td>`;
   if(t==="stock")return `<div class="ptbl xtbl"><table><thead><tr><th>품목코드</th><th>품목명</th><th class="r">전산 현재고</th><th class="r">현장 수량</th><th class="r">차이</th><th>판정</th><th>전산 재고 (코드별)</th><th>현장 수량 (소비기한별)</th></tr></thead><tbody>${rows.length?rows.map(r=>`<tr>${code(r)}
       <td class="r num">${esc(F(r.stock,r))}</td><td class="r num">${esc(F(r.field,r))}</td><td class="r num ${r.diff<0?"xneg":"xpos"}"><b>${esc(F(r.diff,r))}</b></td><td>${pill(r.stockJ)}</td>
-      <td class="small">${(r.stockBy||[]).map(x=>`<span class="num">${esc(x.code)}</span> ${esc(x.q)} ${esc(x.unit)}${(r.stockBy||[]).length>1?` = ${esc(F(x.pk,r))}`:""}`).join("<br>")||"-"}</td>
+      <td class="small">${(r.stockBy||[]).map(x=>`<span class="num">${esc(x.code)}</span> ${esc(x.q)} ${esc(x.unit)}${(r.stockBy||[]).length>1||r.dispQty?` = ${esc(F(x.pk,r))}`:""}`).join("<br>")||"-"}${r.dispQty?`<br><span class="xwarn">폐기 반영 −${esc(F(r.dispQty,r))}</span>`:""}</td>
       <td class="small">${r.fieldRows.map(x=>`<span class="num">${dd(x.date)}</span> ${esc(F(x.field,r))}`).join(" · ")||"-"}</td></tr>${drill(r,8)}`).join(""):empty(8)}</tbody></table></div>`;
   if(t==="fifo")return `<div class="ptbl xtbl"><table><thead><tr><th>품목코드</th><th>품목명</th><th class="r">어긋난 수량</th><th>남아 있으면 안 되는 소비기한 (현장이 많음)</th><th>모자라는 늦은 소비기한</th></tr></thead><tbody>${rows.length?rows.map(r=>`<tr>${code(r)}
       <td class="r num"><b>${esc(F(r.fifo,r))}</b></td>
@@ -8692,12 +8699,12 @@ function dispHtml(){
   return `<div class="acts2 xbar"><h2 class="xtt">폐기 기록 <span class="muted">${L.length}건</span></h2><button type="button" class="btn sm" data-tab="need">확인 필요 전체로</button>
       <span class="sp"></span><select id="exDMon" class="sel" aria-label="달">${mons.map(m=>`<option value="${m}"${m===mon?" selected":""}>${+m.slice(0,4)}년 ${+m.slice(5)}월</option>`).join("")}<option value="all"${mon==="all"?" selected":""}>전체 기간</option></select>
       <button class="btn" type="button" id="exDXlsx"${L.length?"":" disabled"}>폐기 기록 엑셀 받기</button></div>
-    <p class="muted small xtd">‘소비기한 임박·지남’에서 폐기를 누르거나 아래에서 직접 기록합니다. 기록은 본인 계정에만 저장됩니다.</p>
+    <p class="muted small xtd">‘소비기한 임박·지남’에서 폐기를 누르거나 아래에서 직접 기록합니다. 기록은 소비기한 점검 권한이 있는 사람 모두가 같이 봅니다. 재고변동표 기준일(${esc(X.stock&&X.stock.period||"-")}) 이후 폐기한 수량은 전산 현재고에서도 빼고 계산합니다.</p>
     ${by.size?`<div class="xdsum">${[...by.values()].sort((x,y)=>y.qty-x.qty).map(v=>`<span><b>${esc((v.name||v.code).split("_")[0])}</b> ${esc(fmt(v.qty,v.per))} <small class="muted">${v.n}건</small></span>`).join("")}</div>`:""}
-    <div class="ptbl xtbl"><table><thead><tr><th>폐기일</th><th>품목코드</th><th>품목명</th><th>소비기한</th><th class="r">수량</th><th>사유</th><th>메모</th><th>기록</th><th></th></tr></thead><tbody>
+    <div class="ptbl xtbl"><table><thead><tr><th>폐기일</th><th>품목코드</th><th>품목명</th><th>소비기한</th><th class="r">수량</th><th>사유</th><th>메모</th><th>기록한 사람</th><th></th></tr></thead><tbody>
       ${L.length?L.map(d=>`<tr><td class="num">${esc(d.date)}</td><td class="num">${esc(d.code)}</td><td class="nm">${esc(d.name)}</td><td class="num">${esc(d.exp||"-")}</td><td class="r num"><b>${esc(d.qtyText||fmt(d.qty,d.per))}</b></td>
-        <td>${esc(d.reason||"")}</td><td class="small">${esc(d.memo||"")}</td><td class="small muted">${d.at?new Date(d.at).toLocaleString("ko-KR",{month:"numeric",day:"numeric",hour:"2-digit",minute:"2-digit"}):""}</td>
-        <td>${X.ddel===d.id?`<button type="button" class="btn sm danger" data-ddelok="${esc(d.id)}">삭제?</button>`:`<button type="button" class="x" data-ddel="${esc(d.id)}" aria-label="기록 삭제">×</button>`}</td></tr>`).join(""):`<tr><td colspan="9" class="hempty">이 기간 폐기 기록이 없습니다.</td></tr>`}</tbody></table></div>
+        <td>${esc(d.reason||"")}</td><td class="small">${esc(d.memo||"")}</td><td class="small">${esc(d.by||"")} <span class="muted">${d.at?new Date(d.at).toLocaleString("ko-KR",{month:"numeric",day:"numeric",hour:"2-digit",minute:"2-digit"}):""}</span></td>
+        <td>${!(d.uid===me().uid||(window.PORTAL&&window.PORTAL.owner))?"":X.ddel===d.id?`<button type="button" class="btn sm danger" data-ddelok="${esc(d.id)}">삭제?</button>`:`<button type="button" class="x" data-ddel="${esc(d.id)}" aria-label="기록 삭제">×</button>`}</td></tr>`).join(""):`<tr><td colspan="9" class="hempty">이 기간 폐기 기록이 없습니다.</td></tr>`}</tbody></table></div>
     <form class="panel2 xdadd" id="exDAdd" autocomplete="off"><h2>폐기 직접 기록</h2><div class="acts2">
       <select id="exDaCode" class="sel" aria-label="품목"><option value="">품목 선택</option>${X.items.map(i=>`<option value="${esc(i.code)}"${i.code===a.code?" selected":""}>${esc((i.name||i.code).split("_")[0])} · ${esc(i.code)}</option>`).join("")}</select>
       <input type="text" id="exDaExp" class="xin num" style="width:130px" placeholder="소비기한 261101" value="${esc(a.exp)}" aria-label="소비기한">
@@ -8705,7 +8712,7 @@ function dispHtml(){
       <select id="exDaUnit" aria-label="단위"><option value="pk"${a.unit==="pk"?" selected":""}>개</option><option value="bx"${a.unit==="bx"?" selected":""}>박스${it&&it.per>1?` (${it.per}개)`:""}</option></select>
       <select id="exDaReason" aria-label="사유">${REASONS.map(x=>`<option${x===a.reason?" selected":""}>${x}</option>`).join("")}</select>
       <input type="text" id="exDaMemo" class="xin" style="width:180px" placeholder="메모 (선택)" value="${esc(a.memo)}">
-      <button class="btn primary" type="submit">기록</button></div><p class="muted small" style="margin:6px 0 0">폐기일은 기준일(${esc(X.base)})로 기록되고, 현장 수량에서도 같이 빠집니다.</p></form>`;
+      <button class="btn primary" type="submit">기록</button></div><p class="muted small" style="margin:6px 0 0">폐기일은 기준일(${esc(X.base)})로 기록되고, 현장 수량과 전산 현재고에서 같이 빠집니다.</p></form>`;
 }
 async function dispXlsx(){
   const mon=$("exDMon")?$("exDMon").value:"all";const L=mon==="all"?X.disp:X.disp.filter(d=>(d.date||"").slice(0,7)===mon);
@@ -8721,7 +8728,7 @@ function rowHtml(r){
   const o=X.open.has(r.code);
   const left=r.left==null?"":r.left<0?`<span class="xneg">${r.left}일</span>`:r.left+"일";
   return `<tr class="${o?"open":""}"><td class="cd"><button type="button" class="drill-btn" data-x="${esc(r.code)}" aria-expanded="${o}">${o?"▾":"▸"} ${esc(r.code)}</button></td>
-    <td class="nm">${esc(r.name)}</td><td class="r num">${esc(F(r.stock,r))||"-"}</td><td class="r num">${r.n?esc(F(r.field,r)):"미기재"}</td>
+    <td class="nm">${esc(r.name)}</td><td class="r num">${esc(F(r.stock,r))||"-"}${r.dispQty?`<br><small class="xwarn">폐기 −${esc(F(r.dispQty,r))}</small>`:""}</td><td class="r num">${r.n?esc(F(r.field,r)):"미기재"}</td>
     <td class="r num ${r.diff<0?"xneg":r.diff>0?"xpos":""}">${r.n&&r.diff!=null?esc(F(r.diff,r)):"-"}</td><td>${pill(r.stockJ)}</td>
     <td>${pill(r.fifoJ)}${r.fifo>0?` <small>${esc(F(r.fifo,r))}</small>`:""}</td><td class="num">${r.first||"-"}</td><td class="r num">${left}</td>
     <td>${pill(r.expJ)}${r.expQty>0?` <small>${esc(F(r.expQty,r))}</small>`:""}</td><td class="small">${esc(r.memo)}</td></tr>
@@ -8806,7 +8813,7 @@ function bind(R){
   const dm=$("exDMon");if(dm)dm.onchange=()=>{X.dmon=dm.value;render();};
   const dx=$("exDXlsx");if(dx)dx.onclick=()=>dispXlsx().catch(()=>toast("엑셀을 만들지 못했습니다"));
   rt.querySelectorAll("[data-ddel]").forEach(b=>b.onclick=()=>{X.ddel=b.dataset.ddel;render();setTimeout(()=>{if(X.ddel===b.dataset.ddel){X.ddel=null;render();}},3000);});
-  rt.querySelectorAll("[data-ddelok]").forEach(b=>b.onclick=async()=>{const id=b.dataset.ddelok;X.ddel=null;try{await dispCol().doc(id).delete();toast("폐기 기록을 지웠습니다");}catch(e){toast("지우지 못했습니다");}});
+  rt.querySelectorAll("[data-ddelok]").forEach(b=>b.onclick=async()=>{const id=b.dataset.ddelok;X.ddel=null;try{await dispCol().doc(id).delete();toast("폐기 기록을 지웠습니다");}catch(e){toast("지우지 못했습니다 (본인이 기록한 것만 지울 수 있습니다)");}});
   const da=$("exDAdd");if(da){const keep=()=>{X.dadd={code:$("exDaCode").value,exp:$("exDaExp").value.trim(),qty:$("exDaQty").value.trim(),unit:$("exDaUnit").value,reason:$("exDaReason").value,memo:$("exDaMemo").value};};
     da.addEventListener("input",keep);da.addEventListener("change",e=>{keep();if(e.target.id==="exDaCode")render();});
     da.onsubmit=async e=>{e.preventDefault();keep();const a=X.dadd,it=X.items.find(i=>i.code===a.code);if(!it){toast("품목을 골라 주세요");return;}
