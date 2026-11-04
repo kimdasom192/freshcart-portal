@@ -4511,7 +4511,7 @@ span.ck{cursor:default}
 .dialog h2{margin:0;font-size:17px}
 @media (prefers-reduced-motion:no-preference){.task{transition:background .12s}}
 
-/* ===== 화면 전환 (팀 업무일지 / 나만 보는 업무확인) ===== */
+/* ===== 화면 전환 (팀 업무일지 / 나만 보는 업무리스트) ===== */
 .vnav{display:flex;flex-direction:column;gap:6px}
 @media (max-width:900px){.vnav{flex-direction:row}}
 .vbtn{flex:1;display:flex;align-items:center;gap:10px;text-align:left;border:1px solid var(--line);background:var(--surface);border-radius:10px;padding:10px 12px}
@@ -4684,7 +4684,7 @@ span.ck{cursor:default}
 
 <div class="wrap">
   <aside class="rail">
-    <div class="brand"><b>주간 업무일지</b><span>매주 작성 · 보고 · 기록</span></div>
+    <div class="brand" id="wlBrand"><b>주간 업무일지</b><span>매주 작성 · 보고 · 기록</span></div>
     <nav class="vnav" id="vnav" aria-label="화면 선택"></nav>
     <section class="panel" id="pMembers"><h3>팀원 <span id="memCount"></span></h3><div class="members" id="members"><div class="empty-note">불러오는 중…</div></div></section>
     <section class="panel" id="pRecords"><h3>보고 기록</h3><div class="records" id="records"><div class="empty-note">제출한 주간보고가 여기에 쌓입니다.</div></div></section>
@@ -7312,10 +7312,12 @@ async function exportXlsx() {
    ===================================================================== */
 const DOWK = ["일", "월", "화", "수", "목", "금", "토"];
 const DAY_ORDER = [1, 2, 3, 4, 5, 6, 0];
-const TODO_CATS = ["특이사항", "견적", "발주", "메모"];
-/* 업무확인 분류: 사람마다 추가·이름 바꾸기·삭제 (내 설정에 저장) */
-const tcats = () => (M.settings && Array.isArray(M.settings.todoCats)) ? M.settings.todoCats : TODO_CATS;
-const GROUPS_DEFAULT = ["발주/전표/마감", "출력/검수", "전표등록", "기타"];
+const TODO_CATS_OWNER = ["특이사항", "견적", "발주", "메모"];
+/* 업무리스트 분류: 사람마다 추가·이름 바꾸기·삭제 (내 설정에 저장) */
+const tcats = () => (M.settings && Array.isArray(M.settings.todoCats)) ? M.settings.todoCats : (IS_OWNER() ? TODO_CATS_OWNER : ["업무", "메모"]);
+/* 기본 그룹·분류: 관리자(다솜)는 기존 그대로, 다른 사람은 빈 상태에서 각자 만들어 씀 */
+const IS_OWNER = () => !!(window.PORTAL && window.PORTAL.owner);
+const GROUPS_DEFAULT_OWNER = ["발주/전표/마감", "출력/검수", "전표등록", "기타"];
 const ICON_LOCK = `<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><rect x="3" y="7" width="10" height="7" rx="1.5"/><path d="M5.5 7V5a2.5 2.5 0 0 1 5 0v2"/></svg>`;
 const ICON_TEAM = `<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><rect x="3" y="3" width="14" height="14" rx="2"/><path d="M3 8h14M8 8v9"/></svg>`;
 const ICON_CHECK = `<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><rect x="3" y="3" width="14" height="14" rx="2"/><path d="m6.5 10 2.5 2.5 4.5-5"/></svg>`;
@@ -7331,7 +7333,7 @@ const ym = s => s.slice(0, 7);
 const mdw = s => { if (!s) return ""; const d = pd(s); return `${d.getUTCMonth() + 1}.${String(d.getUTCDate()).padStart(2, "0")}(${DOWK[d.getUTCDay()]})`; };
 const myDoc = () => S.db.doc(`data/users/${S.meId}/my`);
 const myCol = n => myDoc().collection(n);
-const groups = () => { const g = (M.settings && Array.isArray(M.settings.groups) && M.settings.groups.length) ? [...M.settings.groups] : [...GROUPS_DEFAULT]; M.routines.forEach(r => { if (r.group && !g.includes(r.group)) g.push(r.group); }); return g; };
+const groups = () => { const g = (M.settings && Array.isArray(M.settings.groups) && M.settings.groups.length) ? [...M.settings.groups] : [...(IS_OWNER() ? GROUPS_DEFAULT_OWNER : ["기본"])]; M.routines.forEach(r => { if (r.group && !g.includes(r.group)) g.push(r.group); }); return g; };
 const gIdx = g => { const i = groups().indexOf(g); return i < 0 ? 999 : i; };
 const rOrder = (a, b) => gIdx(a.group) - gIdx(b.group) || (a.order || 0) - (b.order || 0) || (a.createdAt || 0) - (b.createdAt || 0);
 const myReady = () => M.loaded.r && M.loaded.m && M.loaded.t && M.loaded.s;
@@ -7551,7 +7553,7 @@ function goLog(taskId, W, body) {
   render();
   setTimeout(() => { const f = document.getElementById("tf-" + taskId); if (f) f.scrollIntoView({ block: "center", behavior: "smooth" }); }, 60);
 }
-/* 포털에서 정한 권한: 주간 업무일지(log)·업무확인(me) 따로 */
+/* 포털에서 정한 권한: 주간 업무일지(log)·업무리스트(me) 따로 */
 const allowV = () => window.__logAllow || { log: true, me: true };
 function fixView() { const A = allowV(); if (S.view === "me" && !A.me) S.view = "log"; if (S.view !== "me" && !A.log && A.me) S.view = "me"; }
 window.__logView = v => { try { setView(v); } catch (e) {} };
@@ -7574,16 +7576,19 @@ function renderNav() {
   const p = myReady() && M.date === todayStr() ? dayProgress() : null;
   const open = myReady() ? visibleTodos().filter(t => !t.done && t.date && t.date <= todayStr()).length : 0;
   const A = allowV();
+  /* 포털에서는 업무일지·업무리스트가 따로 메뉴라 제목만 화면에 맞추고 전환 버튼은 숨김 */
+  const br = $("#wlBrand"); if (br) br.innerHTML = S.view === "me" ? "<b>업무리스트</b><span>나만 보는 체크리스트 · 할 일 (사람마다 따로)</span>" : "<b>주간 업무일지</b><span>매주 작성 · 보고 · 기록</span>";
+  nav.hidden = !!window.__logAllow;
   nav.innerHTML = `${A.log ? `<button class="vbtn" data-act="view" data-v="log" aria-pressed="${S.view !== "me"}">${ICON_TEAM}<span class="vt"><b>주간 업무일지</b><small>팀 공유 · 주 1회 보고</small></span></button>` : ""}
-    ${S.meId && A.me ? `<button class="vbtn" data-act="view" data-v="me" aria-pressed="${S.view === "me"}">${ICON_CHECK}<span class="vt"><b>업무확인</b><small><span class="lock">${ICON_LOCK}나만 보기</span>${p ? ` · 오늘 ${p.done}/${p.n}` : ""}${open ? ` · 할 일 ${open}` : ""}</small></span></button>` : ""}`;
+    ${S.meId && A.me ? `<button class="vbtn" data-act="view" data-v="me" aria-pressed="${S.view === "me"}">${ICON_CHECK}<span class="vt"><b>업무리스트</b><small><span class="lock">${ICON_LOCK}나만 보기</span>${p ? ` · 오늘 ${p.done}/${p.n}` : ""}${open ? ` · 할 일 ${open}` : ""}</small></span></button>` : ""}`;
   const hide = S.view === "me";
   $("#pMembers").hidden = hide; $("#pRecords").hidden = hide;
 }
 function renderMy() {
   const box = $("#sheet");
-  if (!S.db || !S.meId) { box.innerHTML = `<div class="loading">${S.noDb || (S.db && !S.meId) ? "로그인한 상태에서만 업무확인을 쓸 수 있습니다." : "불러오는 중…"}</div>`; return; }
-  if (M.failed) { box.innerHTML = `<div class="loading">업무확인을 불러오지 못했습니다. 이 업무일지에 ‘참여자’ 이상 권한이 있어야 쓸 수 있습니다.</div>`; return; }
-  if (!myReady()) { box.innerHTML = `<div class="loading">${M.slow ? "저장소에 아직 연결되지 않았습니다. 잠시 후 다시 확인해 주세요." : "업무확인을 불러오는 중…"}</div>`; return; }
+  if (!S.db || !S.meId) { box.innerHTML = `<div class="loading">${S.noDb || (S.db && !S.meId) ? "로그인한 상태에서만 업무리스트를 쓸 수 있습니다." : "불러오는 중…"}</div>`; return; }
+  if (M.failed) { box.innerHTML = `<div class="loading">업무리스트를 불러오지 못했습니다. 이 업무일지에 ‘참여자’ 이상 권한이 있어야 쓸 수 있습니다.</div>`; return; }
+  if (!myReady()) { box.innerHTML = `<div class="loading">${M.slow ? "저장소에 아직 연결되지 않았습니다. 잠시 후 다시 확인해 주세요." : "업무리스트를 불러오는 중…"}</div>`; return; }
   if (M.edit && document.getElementById("tdf-" + M.edit)) return; // 편집 중엔 입력값 보존
   const a = document.activeElement;
   const keep = a && a.id && box.contains(a) && /^(INPUT|TEXTAREA)$/.test(a.tagName) && a.type !== "date" ? { id: a.id, v: a.value, s: a.selectionStart, e: a.selectionEnd } : null;
@@ -7592,7 +7597,7 @@ function renderMy() {
   const openToday = visibleTodos().filter(t => !t.done && t.date === M.date).length;
   box.innerHTML = `
     <header class="sheet-head my-head">
-      <div class="who"><div class="eyebrow"><span class="lock">${ICON_LOCK}업무확인 · 나만 보기</span></div>
+      <div class="who"><div class="eyebrow"><span class="lock">${ICON_LOCK}업무리스트 · 나만 보기</span></div>
         <h1>${d.getUTCMonth() + 1}월 ${d.getUTCDate()}일<small>${DOWK[d.getUTCDay()]}요일${M.date === td ? " · 오늘" : ""}</small></h1></div>
       <div class="weeknav">
         <button class="ibtn" data-act="my-date" data-d="-1" aria-label="이전 날">‹</button>
@@ -7609,7 +7614,7 @@ function renderMy() {
       <div class="actions"><span class="seg2" role="group" aria-label="보기"><button data-act="my-tab" data-v="desk" aria-pressed="${M.tab === "desk"}">하루 업무</button><button data-act="my-tab" data-v="cal" aria-pressed="${M.tab === "cal"}">달력</button><button data-act="my-tab" data-v="rt" aria-pressed="${M.tab === "rt"}">반복 업무 설정</button></span></div>
     </div>
     ${M.tab === "rt" ? routinesHTML() : M.tab === "cal" ? calendarHTML() : `<div class="desk"><section class="pane">${checklistHTML()}</section><section class="pane">${todoPaneHTML()}</section></div>`}
-    <div class="notice"><span>업무확인 내용은 본인 계정에만 저장되어 업무일지를 함께 보는 사람에게 보이지 않습니다.</span><span>팀 주간 업무일지에는 직접 ‘업무일지에 기재’를 누른 업무만 올라가고, 그 외에는 어떤 것도 자동으로 올라가지 않습니다.</span></div>`;
+    <div class="notice"><span>업무리스트 내용은 본인 계정에만 저장되어 업무일지를 함께 보는 사람에게 보이지 않습니다.</span><span>팀 주간 업무일지에는 직접 ‘업무일지에 기재’를 누른 업무만 올라가고, 그 외에는 어떤 것도 자동으로 올라가지 않습니다.</span></div>`;
   if (M.focus) { const el = document.getElementById(M.focus); M.focus = null; if (el) el.focus(); }
   else if (keep) { const el = document.getElementById(keep.id); if (el) { el.value = keep.v; el.focus(); try { el.setSelectionRange(keep.s, keep.e); } catch (e) {} } }
 }
@@ -7942,7 +7947,7 @@ render();
 };</script>
 <script>(function(){
 "use strict";
-/* ===== 홈 · 오늘 챙길 일: 각자의 업무확인(체크리스트·업무리스트)과 업무일지에서 모음 ===== */
+/* ===== 홈 · 오늘 챙길 일: 각자의 업무리스트(체크리스트·업무리스트)과 업무일지에서 모음 ===== */
 const esc=s=>String(s==null?"":s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const today=()=>new Intl.DateTimeFormat("en-CA",{timeZone:"Asia/Seoul"}).format(new Date());
 const pd=s=>{const [y,m,d]=String(s).split("-").map(Number);return new Date(Date.UTC(y,m-1,d));};
@@ -7979,10 +7984,10 @@ window.HOME={async fill(el,ctx){
     const n=items.length,dn=items.filter(i=>i.done).length,left=items.filter(i=>!i.done);
     ck=`<section class="hcard"><div class="hh"><h2>오늘 체크리스트</h2><span class="hn">${n?`${dn} / ${n}`:"-"}</span></div>
       ${n?`<div class="hbar" role="img" aria-label="${n}개 중 ${dn}개 완료"><span style="width:${Math.round(dn/n*100)}%"></span></div>`:""}
-      ${!n?`<p class="hempty">오늘 반복 업무가 없습니다. 업무확인에서 요일별 반복 업무를 등록하면 매일 자동으로 생깁니다.</p>`:
+      ${!n?`<p class="hempty">오늘 반복 업무가 없습니다. 업무리스트에서 요일별 반복 업무를 등록하면 매일 자동으로 생깁니다.</p>`:
         !left.length?`<p class="hdone">오늘 체크리스트를 모두 마쳤습니다.</p>`:
         `<ul class="hl">${left.slice(0,8).map(i=>`<li><span class="hck" aria-hidden="true"></span><span class="ht">${esc(i.t)}</span>${i.g?`<span class="hg">${esc(i.g)}</span>`:""}</li>`).join("")}</ul>${left.length>8?`<p class="hmore">외 ${left.length-8}개</p>`:""}`}
-      <a class="hgo" ${go("me")}>업무확인 열기 →</a></section>`;
+      <a class="hgo" ${go("me")}>체크리스트 열기 →</a></section>`;
   }
 
   /* 2. 업무리스트 (지난 것 · 오늘 · 7일 안) */
@@ -8010,7 +8015,7 @@ window.HOME={async fill(el,ctx){
       <a class="hgo" ${go("log")}>업무일지 열기 →</a></section>`;
   }
 
-  const note=ctx.preview?`<p class="pnote">${esc(ctx.preview)}님 화면 미리보기입니다. 업무확인 체크리스트·업무리스트는 본인만 볼 수 있어 업무일지만 보여 줍니다.</p>`:"";
+  const note=ctx.preview?`<p class="pnote">${esc(ctx.preview)}님 화면 미리보기입니다. 체크리스트·업무리스트는 본인만 볼 수 있어 업무일지만 보여 줍니다.</p>`:"";
   el.innerHTML=(ck||tl||lg)?`${note}<div class="hgrid">${ck}${tl}${lg}</div>`:note;
   el.querySelectorAll("[data-wl]").forEach(a=>a.addEventListener("click",()=>{const v=a.dataset.wl;try{localStorage.setItem("wl-view",v);}catch(e){}if(window.__logView)window.__logView(v);}));
 }};
@@ -8758,7 +8763,7 @@ const PERMS=[
   {k:"close.daily",g:"마감",l:"일일배송"},
   {k:"close.map",g:"마감",l:"매핑표 관리"},
   {k:"log",g:"업무",l:"주간 업무일지"},
-  {k:"check",g:"업무",l:"업무확인 (체크리스트)"},
+  {k:"check",g:"업무",l:"업무리스트 (체크리스트)"},
   {k:"quote",g:"관리",l:"견적서"},
   {k:"expiry",g:"관리",l:"소비기한 점검"}];
 const ALL=PERMS.map(p=>p.k);
@@ -8767,8 +8772,8 @@ const PRESETS=[
   {l:"전체 메뉴",keys:ALL},
   {l:"마감 담당",keys:["close.run","close.cmp","close.ss","close.daily","close.map","log","check"]},
   {l:"보고 열람",keys:["slow","rep","log","check"]},
-  {l:"업무일지·업무확인",keys:["log","check"]},
-  {l:"업무확인만",keys:["check"]}];
+  {l:"업무일지·업무리스트",keys:["log","check"]},
+  {l:"업무리스트만",keys:["check"]}];
 const closeTabsOf=k=>[...k].filter(x=>x.startsWith("close.")).map(x=>x.slice(6));
 const VIEWS=[
   {v:"home",l:"홈",hash:"home"},
@@ -8778,7 +8783,7 @@ const VIEWS=[
   {v:"rep",l:"매출 보고서",hash:"sales-report",g:"재고·마진",need:k=>k.has("rep"),d:"업체별 마감금액(공급가·부가세·합계)과 계산서 발행, 품목 마진율"},
   {v:"close",l:"마감 업로드",hash:"close",g:"마감",need:k=>closeTabsOf(k).length>0,d:"원본을 올리면 업체별 이카운트 업로드 파일, 마감 비교, 숙성도·일일배송"},
   {v:"log",l:"업무일지",hash:"worklog",g:"업무",need:k=>k.has("log"),d:"주간 업무일지 작성·보고, 팀 공유"},
-  {v:"check",l:"업무확인",hash:"checklist",g:"업무",need:k=>k.has("check"),d:"각자 만들어 쓰는 체크리스트·업무리스트 (나만 보기)"},
+  {v:"check",l:"업무리스트",hash:"checklist",g:"업무",need:k=>k.has("check"),d:"사람마다 따로 만들어 쓰는 체크리스트·할 일 (나만 보기)"},
   {v:"quote",l:"견적서",hash:"quote",g:"관리",need:k=>k.has("quote"),d:"품목 정보를 넣으면 대표님 보고용과 거래처 전달용 견적서, 타겟가 비교까지"},
   {v:"expiry",l:"소비기한 점검",hash:"expiry",g:"관리",need:k=>k.has("expiry"),d:"현재고와 입고 소비기한, 현장 수량을 비교해 재고 차이·선입선출·임박 품목 확인 (각자 따로 저장)"},
   {v:"users",l:"사용자·권한",hash:"people",owner:1,g:"관리"}];
@@ -8838,7 +8843,7 @@ function route(){
   renderNav();window.scrollTo(0,0);
 }
 window.addEventListener("hashchange",route);
-/* 업무일지 모듈 안에서 보일 화면: 주간 업무일지(log) · 업무확인(check) 권한 따로 */
+/* 업무일지 모듈 안에서 보일 화면: 주간 업무일지(log) · 업무리스트(check) 권한 따로 */
 function logAllow(){const k=keys();window.__logAllow={log:k.has("log"),me:k.has("check")&&!P.preview};}
 function renderNav(){
   let h="",lastG=null;
@@ -8893,7 +8898,7 @@ function renderHome(){
   $("pHome").innerHTML=`<div class="page">
     <div class="page-h"><small>${t.getFullYear()}년 ${t.getMonth()+1}월 ${t.getDate()}일 ${WD[t.getDay()]}요일</small>
       <h1>${nm?esc(nm)+"님, ":""}오늘 챙길 일</h1>
-      <p>내 업무확인 체크리스트·업무리스트와 이번 주 업무일지에서 오늘 할 일을 모았습니다.</p></div>
+      <p>내 체크리스트·업무리스트와 이번 주 업무일지에서 오늘 할 일을 모았습니다.</p></div>
     <section id="hToday"></section>
     <div class="mgrid">${cards}</div></div>`;
   if(window.HOME)window.HOME.fill(document.getElementById("hToday"),{db:FC.db,pid:FC.profile&&FC.profile.pid,logPid:P.preview?P.preview.pid:(FC.profile&&FC.profile.pid),privateOk:!P.preview&&k.has("check"),preview:P.preview&&P.preview.name,hasLog:k.has("log")||k.has("check"),teamLog:k.has("log")});
@@ -8980,7 +8985,7 @@ function openPw(){
 let LOGS=[];
 function loadUsers(){
   unsubUsers=FC.fs.collection("users").onSnapshot(q=>{P.list=q.docs.map(d=>Object.assign({uid:d.id},d.data())).sort((a,b)=>(a.createdAt||0)-(b.createdAt||0));
-    /* 업무확인 권한이 따로 생기기 전부터 업무일지를 쓰던 사람은 업무확인도 그대로 쓰게 한 번만 옮겨 줌 */
+    /* 업무리스트 권한이 따로 생기기 전부터 업무일지를 쓰던 사람은 업무리스트도 그대로 쓰게 한 번만 옮겨 줌 */
     for(const x of P.list){if(x.role!=="admin"&&!x.checkSet&&(x.menus||[]).includes("log")&&!(x.menus||[]).includes("check"))
       FC.fs.doc("users/"+x.uid).update({menus:[...x.menus,"check"],checkSet:true}).catch(()=>{});}
     if(P.view==="users")renderUsers();},()=>{});
