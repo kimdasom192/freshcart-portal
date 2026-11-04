@@ -4604,6 +4604,8 @@ span.ck{cursor:default}
 .cat.k0{background:var(--prog-soft);color:var(--prog);border-color:transparent}
 .cat.k1{background:var(--new-soft);color:var(--new);border-color:transparent}
 .cat.k2{background:var(--done-soft);color:var(--done);border-color:transparent}
+.tl.push{color:var(--forest);font-weight:600}
+.mtag.pushed{color:var(--muted);font-weight:500}
 .cat.k3{background:var(--late-soft);color:var(--late);border-color:transparent}
 .cat.k4{background:var(--danger-soft);color:var(--danger);border-color:transparent}
 .cat.k5{background:var(--surface-2);color:var(--ink);border-color:var(--line-strong)}
@@ -7682,8 +7684,8 @@ function todoHTML(t, opts = {}) {
   const memo = t.memo ? t.memo.split("\n").filter(s => s.trim()).map(l => `<div class="memo">${esc(l)}</div>`).join("") : "";
   return `<div class="td${t.done ? " done-x" : ""}"><button class="ck2${t.done ? " on" : ""}" data-act="td-ck" data-id="${esc(t.id)}" aria-pressed="${!!t.done}" aria-label="${esc(t.title)} 완료">${t.done ? "✓" : ""}</button>
     <div class="td-b"><div class="td-t">${esc(t.title || "(제목 없음)")}</div>${memo}
-      <div class="td-m">${catPill(t.cat)}${opts.showDate && t.date ? `<span class="dt">${esc(mdw(t.date))}</span>` : ""}${late ? `<span class="late-t">${late}일 지남</span>` : ""}${t.mid ? `<span class="mtag">매월</span>` : ""}${t.done && t.doneAt && t.doneAt !== t.date ? `<span class="dt">완료 ${esc(mdw(t.doneAt))}</span>` : ""}${t.log ? `<button class="logtag" data-act="td-golog" data-id="${esc(t.id)}">업무일지 기재됨 ›</button>` : ""}</div>
-      <div class="td-ctl"><button class="tl" data-act="td-edit" data-id="${esc(t.id)}">편집</button>${t.log ? "" : `<button class="tl" data-act="td-log" data-id="${esc(t.id)}">업무일지에 기재</button>`}<button class="tl del${M.arm === "td" + t.id ? " arm" : ""}" data-act="td-del" data-id="${esc(t.id)}">${M.arm === "td" + t.id ? "한 번 더 누르면 삭제" : "삭제"}</button></div>
+      <div class="td-m">${catPill(t.cat)}${opts.showDate && t.date ? `<span class="dt">${esc(mdw(t.date))}</span>` : ""}${late ? `<span class="late-t">${late}일 지남</span>` : ""}${t.mid ? `<span class="mtag">매월</span>` : ""}${t.pushed ? `<span class="mtag pushed">${t.pushed}번 미룸</span>` : ""}${t.done && t.doneAt && t.doneAt !== t.date ? `<span class="dt">완료 ${esc(mdw(t.doneAt))}</span>` : ""}${t.log ? `<button class="logtag" data-act="td-golog" data-id="${esc(t.id)}">업무일지 기재됨 ›</button>` : ""}</div>
+      <div class="td-ctl">${t.done ? "" : `<button class="tl push" data-act="td-push" data-id="${esc(t.id)}" title="다음 날로 미루기">미루기 →</button>`}<button class="tl" data-act="td-edit" data-id="${esc(t.id)}">편집</button>${t.log ? "" : `<button class="tl" data-act="td-log" data-id="${esc(t.id)}">업무일지에 기재</button>`}<button class="tl del${M.arm === "td" + t.id ? " arm" : ""}" data-act="td-del" data-id="${esc(t.id)}">${M.arm === "td" + t.id ? "한 번 더 누르면 삭제" : "삭제"}</button></div>
     </div></div>`;
 }
 function todoPaneHTML() {
@@ -7810,6 +7812,11 @@ document.addEventListener("click", e => {
     case "my-ck": changeDay(d => { d.items = d.items.map(i => i.id === id ? { ...i, done: !i.done } : i); return d; }); break;
     case "my-ckrm": changeDay(d => { const it = d.items.find(i => i.id === id); if (it && it.rid && !d.removed.includes(it.rid)) d.removed.push(it.rid); d.items = d.items.filter(i => i.id !== id); return d; }); break;
     case "td-ck": toggleTodo(id); break;
+    case "td-push": { const t = M.todos.find(x => x.id === id); if (!t) break;
+      /* 지난 업무·오늘 업무·날짜 미정은 내일로, 앞으로 할 업무는 그 다음 날로 */
+      const td = todayStr(), from = t.date && t.date > td ? t.date : td, nd = addDays(from, 1);
+      patchTodo(id, { date: nd, pushed: (t.pushed || 0) + 1 });
+      toast(`${mdw(nd)}로 미뤘습니다.`); break; }
     case "td-edit": M.edit = id; render(); { const f = document.querySelector(`#tdf-${CSS.escape(id)} .e-t`); f && f.focus(); } break;
     case "td-cancel": M.edit = null; render(); break;
     case "td-del": if (armOnce("td" + id)) removeTodo(id); break;
