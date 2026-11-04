@@ -5484,14 +5484,14 @@ async function save(filename,data){
 }
 function showDl(t){ const n=$('#dlNote'); n.textContent=t; n.hidden=false; }
 function saveOne(co){ save(fname(co), new Blob([buildXlsx(co)])); }
-/* 오션베리 구매전산 업로드용 (구매입력 양식): 거래처코드 106(프레시카트), 입고창고 00003, 품목코드는 원본 그대로 */
+/* 오션베리 구매전산 업로드용 (구매입력 양식): 거래처코드 2538103143(프레시카트), 입고창고 106, 품목코드는 원본 그대로 */
 const OCEAN_HEAD=['일자','순번','거래처코드','거래처명','담당자','입고창고','거래유형','통화','환율','품목코드','품목명','규격명','수량','단가','외화금액','공급가액','부가세','부대비용','합계','적요'];
-const OCEAN_WH='00003', OCEAN_CUST=106;
+const OCEAN_WH='106', OCEAN_CUST='2538103143';
 function buildOcean(co){
   const r=results[co];
   const aoa=[OCEAN_HEAD, ...r.rows.map(x=>[x[0],null,OCEAN_CUST,null,null,OCEAN_WH,null,null,null,x.src||x[9],x[10],x[11],x[12],x[13],null,x[15],x[16],null,(x[15]||0)+(x[16]||0),x[17]])];
   const ws=XLSX.utils.aoa_to_sheet(aoa,{cellDates:true, dateNF:'yyyy-mm-dd'});
-  for(let i=2;i<=aoa.length;i++){ const c=ws['A'+i]; if(c) c.z='yyyy-mm-dd'; const w=ws['F'+i]; if(w){ w.t='s'; w.v=OCEAN_WH; } const k=ws['J'+i]; if(k){ k.t='s'; k.v=String(k.v); } }
+  for(let i=2;i<=aoa.length;i++){ const c=ws['A'+i]; if(c) c.z='yyyy-mm-dd'; const w=ws['F'+i]; if(w){ w.t='s'; w.v=OCEAN_WH; } const g=ws['C'+i]; if(g){ g.t='s'; g.v=OCEAN_CUST; } const k=ws['J'+i]; if(k){ k.t='s'; k.v=String(k.v); } }
   ws['!cols']=[{wch:11},{wch:5},{wch:10},{wch:8},{wch:6},{wch:8},{wch:6},{wch:5},{wch:5},{wch:13},{wch:44},{wch:12},{wch:7},{wch:10},{wch:6},{wch:12},{wch:10},{wch:8},{wch:12},{wch:14}];
   const wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb,ws,'구매입력');
   return new Uint8Array(XLSX.write(wb,{bookType:'xlsx',type:'array',cellDates:true}));
