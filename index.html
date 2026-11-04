@@ -321,15 +321,15 @@ button,input,select{font:inherit;color:inherit}
 .xcand{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-top:6px}
 .chip2{border:1px dashed var(--line);background:var(--surface);color:var(--ink);border-radius:999px;padding:3px 10px;font-size:12px;cursor:pointer}.chip2:hover{border-color:var(--forest)}
 .xtbl tr.drill>td{white-space:normal}.xdet{position:sticky;left:8px;max-width:min(1180px,calc(100vw - 72px))}
-.xcats{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 10px}
-.xcat{border:1px solid var(--line);background:var(--surface);color:var(--ink);border-radius:999px;padding:5px 12px;font-size:13px;cursor:pointer;display:inline-flex;gap:5px;align-items:center}
-.xcat b{font-family:var(--f-num);font-weight:600;color:var(--muted)}
-.xcat i{font-style:normal;font-size:11px;font-weight:700;background:var(--bad-soft);color:var(--bad);border-radius:999px;padding:0 6px}
-.xcat[aria-pressed="true"]{background:var(--forest);border-color:var(--forest);color:var(--on-forest)}.xcat[aria-pressed="true"] b{color:inherit}
-.xtbl tr.xgrp>td{background:var(--sunk);padding:7px 10px;position:sticky;left:0}
-.xtbl tr.xgrp>td{white-space:nowrap}
-.xgbtn{border:0;background:none;font:inherit;font-size:14px;color:var(--ink);cursor:pointer;padding:2px 4px}
-.xgs{display:inline-flex;gap:4px;margin:0 10px}
+.xsum>button{border:1px solid var(--line);border-radius:10px;padding:10px 12px;background:var(--surface);text-align:left;font:inherit;color:var(--ink);cursor:pointer;display:flex;flex-direction:column;gap:2px}
+.xsum>button span{font-size:12px;color:var(--muted)}.xsum>button b{font-size:22px;font-family:var(--f-num)}.xsum>button i{font-style:normal;font-size:11px;color:var(--muted)}
+.xsum>button:hover{border-color:var(--forest)}
+.xsum>button.bad{border-color:var(--bad);background:var(--bad-soft)}.xsum>button.bad b{color:var(--bad)}
+.xsum>button.warn{border-color:var(--warn);background:var(--warn-soft)}.xsum>button.warn b{color:var(--warn)}
+.xsum>button[aria-selected="true"]{outline:2px solid var(--forest);outline-offset:1px;box-shadow:0 4px 14px rgba(0,0,0,.08)}
+.xsum>button[aria-selected="true"] i{color:var(--forest);font-weight:700}
+.xtt{font-size:16px;margin:0}.xtd{margin:0 0 8px}
+.xtbl td.small{line-height:1.7}
 
 /* 통합 메뉴 띠 */
 .hub{background:var(--sunk);border-bottom:1px solid var(--line)}
@@ -8531,7 +8531,7 @@ const esc=s=>String(s==null?"":s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;"
 function toast(t){const el=document.createElement("div");el.className="ptoast";el.textContent=t;document.body.appendChild(el);setTimeout(()=>el.remove(),2600);}
 const today=()=>new Intl.DateTimeFormat("en-CA",{timeZone:"Asia/Seoul"}).format(new Date());
 const md=s=>s?`${+s.slice(5,7)}/${+s.slice(8,10)}`:"";
-const X={cat:"",catOpen:{},quick:"",lnk:{},on:false,items:[],days:7,base:today(),stock:null,buy:null,open:new Set(),only:true,pend:null,timer:null,loaded:false,add:{code:"",per:""},del:null};
+const X={tab:"need",quick:"",lnk:{},on:false,items:[],days:7,base:today(),stock:null,buy:null,open:new Set(),only:true,pend:null,timer:null,loaded:false,add:{code:"",per:""},del:null};
 const db=()=>window.FC&&window.FC.db, pid=()=>window.FC&&window.FC.profile&&window.FC.profile.pid;
 const docA=()=>db().doc(`data/users/${pid()}/expiry`), docB=()=>db().doc(`data/users/${pid()}/expiryData`);
 async function load(){
@@ -8574,12 +8574,7 @@ function render(){
   if(!X.loaded){root.innerHTML=`<div class="page"><p class="hload">점검 자료를 불러오는 중입니다…</p></div>`;return;}
   const R=EXP.compute(X.items,X.stock,X.buy,X.base,X.days),S=R.sum;
   const need=r=>r.stockJ!=="일치"||r.fifoJ==="의심"||r.expJ==="임박"||r.expJ==="지남"||r.memo;
-  /* 카테고리: 품목마다 직접 정하거나(분류 칸) 이름으로 자동 구분 */
-  const catOf=r=>{const it=X.items.find(i=>i.code===r.code);return catName(it)||"기타";};
-  const cats=[];for(const r of R.rows){const c=catOf(r);if(!cats.includes(c))cats.push(c);}
-  if(X.cat&&!cats.includes(X.cat))X.cat="";
-  const inCat=r=>!X.cat||catOf(r)===X.cat;
-  const rows=(X.only?R.rows.filter(need):R.rows).filter(inCat);
+  const rows=tabRows(R,X.tab);
   const ok=S.items&&!(S.stock+S.fifo+S.exp+S.none+S.memo);
   root.innerHTML=`<div class="page xpage">
     <div class="page-h"><small>각자 따로 저장 · 나만 보기</small><h1>소비기한 점검</h1>
@@ -8601,23 +8596,13 @@ function render(){
       <textarea id="exQuick" rows="4" placeholder="스위트 11 1 6개&#10;단호박 11/15 2박스 3개 11/20 5박스&#10;콘 1118 4박스" aria-label="빠른 입력">${esc(X.quick)}</textarea>
       <div id="exQPrev">${quickPrev()}</div>
       <div class="acts2"><span class="muted small">숫자만 적으면 낱개(개) · 박스는 ‘박스·bx’를 붙여 주세요 · 같은 소비기한을 다시 적으면 새 수량으로 바뀝니다</span><span class="sp"></span><button class="btn primary" type="button" id="exQGo">반영</button></div></div>`:""}
-    ${S.items?`<div class="xsum">
-      <div class="${S.stock?"bad":""}"><span>재고가 안 맞는 품목</span><b>${S.stock}</b></div>
-      <div class="${S.fifo?"warn":""}"><span>선입선출 의심</span><b>${S.fifo}</b></div>
-      <div class="${S.exp?"warn":""}"><span>소비기한 임박·지남</span><b>${S.exp}</b></div>
-      <div><span>현장 미기재</span><b>${S.none}</b></div>
-      <div><span>입력 확인 필요</span><b>${S.memo}</b></div>
-      <div><span>점검 품목</span><b>${S.items}</b></div></div>
-    <div class="acts2 xbar"><div class="seg2" role="group" aria-label="보기"><button type="button" data-only="1" aria-pressed="${X.only}">확인 필요만 ${R.rows.filter(need).length}</button><button type="button" data-only="0" aria-pressed="${!X.only}">전체 ${R.rows.length}</button></div>
-      <span class="sp"></span>${ok?`<span class="xok">✓ 모든 품목이 정상입니다</span>`:""}<button class="btn" type="button" id="exOpenAll">${rows.length&&rows.every(r=>X.open.has(r.code))?"상세 모두 접기":"상세 모두 펼치기"}</button><button class="btn" type="button" id="exXlsx">점검표 엑셀 받기</button></div>
-    <div class="xcats" role="group" aria-label="카테고리"><button type="button" class="xcat" data-cat="" aria-pressed="${!X.cat}">전체 <b>${R.rows.length}</b></button>${cats.map(c=>{const rs=R.rows.filter(r=>catOf(r)===c),bad=rs.filter(need).length;
-      return `<button type="button" class="xcat" data-cat="${esc(c)}" aria-pressed="${X.cat===c}">${esc(c)} <b>${rs.length}</b>${bad?`<i>${bad}</i>`:""}</button>`;}).join("")}</div>
-    <div class="ptbl xtbl"><table><thead><tr><th>품목코드</th><th>품목명</th><th class="r">전산 현재고</th><th class="r">현장 수량</th><th class="r">차이</th><th>재고</th><th>선입선출</th><th>가장 빠른 소비기한</th><th class="r">남은 일수</th><th>소비기한</th><th>확인 메모</th></tr></thead>
-      <tbody>${rows.length?cats.filter(c=>rows.some(r=>catOf(r)===c)).map(c=>{const rs=rows.filter(r=>catOf(r)===c),all=R.rows.filter(r=>catOf(r)===c),shut=X.catOpen[c]===false;
-        const cnt=(f)=>all.filter(f).length,st=cnt(r=>/현장이/.test(r.stockJ)),ff=cnt(r=>r.fifoJ==="의심"),ex=cnt(r=>r.expJ==="임박"||r.expJ==="지남");
-        return `<tr class="xgrp"><td colspan="11"><button type="button" class="xgbtn" data-cg="${esc(c)}" aria-expanded="${!shut}">${shut?"▸":"▾"} <b>${esc(c)}</b> <span class="muted">${all.length}품목${rs.length!==all.length?` · 표시 ${rs.length}`:""}</span></button>
-          <span class="xgs">${st?`<span class="xp bad">재고 ${st}</span>`:""}${ff?`<span class="xp warn">선입선출 ${ff}</span>`:""}${ex?`<span class="xp warn">임박·지남 ${ex}</span>`:""}${!st&&!ff&&!ex?`<span class="xp ok">이상 없음</span>`:""}</span>
-          <button type="button" class="btn sm" data-cgopen="${esc(c)}">${rs.every(r=>X.open.has(r.code))?"상세 접기":"상세 펼치기"}</button></td></tr>${shut?"":rs.map(r=>rowHtml(r)).join("")}`;}).join(""):`<tr><td colspan="11" class="hempty">확인이 필요한 품목이 없습니다.</td></tr>`}</tbody></table></div>`
+    ${S.items?`<div class="xsum" role="tablist" aria-label="점검 결과">
+      ${[["stock","재고가 안 맞는 품목",S.stock,"bad"],["fifo","선입선출 의심",S.fifo,"warn"],["exp","소비기한 임박·지남",S.exp,"warn"],["none","현장 미기재",S.none,""],["memo","입력 확인 필요",S.memo,""],["all","점검 품목 전체",S.items,""]]
+        .map(([k,l,n,c])=>`<button type="button" role="tab" class="${n&&c?c:""}" data-tab="${k}" aria-selected="${X.tab===k}"><span>${l}</span><b>${n}</b><i>${X.tab===k?"보는 중":"눌러서 보기"}</i></button>`).join("")}</div>
+    <div class="acts2 xbar"><h2 class="xtt">${esc(TABS[X.tab].t)} <span class="muted">${tabRows(R,X.tab).length}품목</span></h2>${X.tab!=="need"?`<button type="button" class="btn sm" data-tab="need">확인 필요 전체로</button>`:""}
+      <span class="sp"></span>${ok?`<span class="xok">✓ 모든 품목이 정상입니다</span>`:""}<button class="btn" type="button" id="exXlsx">점검표 엑셀 받기</button></div>
+    <p class="muted small xtd">${esc(TABS[X.tab].d)}</p>
+    ${tabTable(R)}`
     :`<p class="pnote">점검할 품목이 없습니다. 지금 쓰시는 점검 엑셀을 올리거나, 아래에서 품목을 추가해 주세요.</p>`}
     <form class="panel2 xadd" id="exAdd" autocomplete="off"><h2>점검 품목 추가</h2>
       <div class="acts2"><input type="text" id="exAddCode" class="sel" list="exCodes" placeholder="품목코드" value="${esc(X.add.code)}" aria-label="품목코드"><input type="text" id="exAddPer" class="sel" inputmode="decimal" placeholder="입수량 (박스당 낱개 수, 낱개 관리면 1)" value="${esc(X.add.per)}" aria-label="입수량" style="width:240px"><button class="btn primary" type="submit">추가</button>
@@ -8627,6 +8612,41 @@ function render(){
   </div>`;
   bind(R);
   if(act){const el=$(act);if(el){el.focus();if(el.select&&el.type==="text")try{el.setSelectionRange(el.value.length,el.value.length);}catch(e){}}}
+}
+/* 점검 결과별 보기: 타일을 누르면 그 항목만, 항목에 맞는 상세와 함께 */
+const TABS={need:{t:"확인이 필요한 품목",d:"재고 차이 · 선입선출 의심 · 임박·지남 · 입력 확인 중 하나라도 걸린 품목입니다. 위 칸을 누르면 항목별로 나눠 봅니다."},
+  stock:{t:"재고가 안 맞는 품목",d:"전산 현재고(연결 코드 포함)와 현장에서 센 수량이 다른 품목입니다. 코드별 전산 재고와 소비기한별 현장 수량을 같이 보여 줍니다."},
+  fifo:{t:"선입선출 의심",d:"늦은 소비기한이 모자라는데 빠른 소비기한이 남아 있는 품목입니다. 먼저 들어온 것을 먼저 내보내지 않은 것으로 보이는 소비기한을 보여 줍니다."},
+  exp:{t:"소비기한 임박·지남",d:"기준일 기준 임박 일수 안에 들거나 이미 지난 소비기한이 현장에 남아 있는 품목입니다."},
+  none:{t:"현장 미기재",d:"현장 수량을 아직 입력하지 않은 품목입니다. 품목을 눌러 입력하거나 위 빠른 입력을 쓰세요."},
+  memo:{t:"입력 확인 필요",d:"입수량·단위·소비기한 입력이나 구매현황 입고 기록에 확인할 것이 있는 품목입니다."},
+  all:{t:"점검 품목 전체",d:"등록한 점검 품목 전체입니다."}};
+function tabRows(R,t){const need=r=>r.stockJ!=="일치"||r.fifoJ==="의심"||r.expJ==="임박"||r.expJ==="지남"||r.memo;
+  const f={need,stock:r=>/현장이/.test(r.stockJ),fifo:r=>r.fifoJ==="의심",exp:r=>r.expJ==="임박"||r.expJ==="지남",none:r=>r.stockJ==="미기재",memo:r=>r.memo&&r.stockJ!=="미기재",all:()=>true}[t]||need;
+  return R.rows.filter(f);}
+const dd=d=>d?`${+d.slice(5,7)}/${+d.slice(8,10)}`:"";
+const leftOf=d=>Math.round((Date.parse(d)-Date.parse(X.base))/864e5);
+function tabTable(R){
+  const t=X.tab,rows=tabRows(R,t);
+  const empty=n=>`<tr><td colspan="${n}" class="hempty">해당하는 품목이 없습니다.</td></tr>`;
+  const drill=(r,n)=>X.open.has(r.code)?`<tr class="drill"><td colspan="${n}">${detailHtml(r)}</td></tr>`:"";
+  const code=r=>`<td class="cd"><button type="button" class="drill-btn" data-x="${esc(r.code)}" aria-expanded="${X.open.has(r.code)}">${X.open.has(r.code)?"▾":"▸"} ${esc(r.code)}</button></td><td class="nm">${esc(r.name)}</td>`;
+  if(t==="stock")return `<div class="ptbl xtbl"><table><thead><tr><th>품목코드</th><th>품목명</th><th class="r">전산 현재고</th><th class="r">현장 수량</th><th class="r">차이</th><th>판정</th><th>전산 재고 (코드별)</th><th>현장 수량 (소비기한별)</th></tr></thead><tbody>${rows.length?rows.map(r=>`<tr>${code(r)}
+      <td class="r num">${esc(F(r.stock,r))}</td><td class="r num">${esc(F(r.field,r))}</td><td class="r num ${r.diff<0?"xneg":"xpos"}"><b>${esc(F(r.diff,r))}</b></td><td>${pill(r.stockJ)}</td>
+      <td class="small">${(r.stockBy||[]).map(x=>`<span class="num">${esc(x.code)}</span> ${esc(x.q)} ${esc(x.unit)}${(r.stockBy||[]).length>1?` = ${esc(F(x.pk,r))}`:""}`).join("<br>")||"-"}</td>
+      <td class="small">${r.fieldRows.map(x=>`<span class="num">${dd(x.date)}</span> ${esc(F(x.field,r))}`).join(" · ")||"-"}</td></tr>${drill(r,8)}`).join(""):empty(8)}</tbody></table></div>`;
+  if(t==="fifo")return `<div class="ptbl xtbl"><table><thead><tr><th>품목코드</th><th>품목명</th><th class="r">어긋난 수량</th><th>남아 있으면 안 되는 소비기한 (현장이 많음)</th><th>모자라는 늦은 소비기한</th></tr></thead><tbody>${rows.length?rows.map(r=>`<tr>${code(r)}
+      <td class="r num"><b>${esc(F(r.fifo,r))}</b></td>
+      <td class="small">${r.fieldRows.filter(x=>x.fifo>0).map(x=>`<span class="num">${dd(x.date)}</span> 현장 ${esc(F(x.field,r))} · 남아 있어야 ${esc(F(x.expect,r))} → <b class="xwarn">${esc(F(x.fifo,r))} 많음</b>`).join("<br>")}</td>
+      <td class="small">${r.groups.filter(g=>g.short>0).map(g=>`<span class="num">${dd(g.exp)}</span> 남아 있어야 ${esc(F(g.expect,r))} · 현장 ${esc(F(g.field,r))} → <b class="xneg">${esc(F(g.short,r))} 부족</b>`).join("<br>")}</td></tr>${drill(r,5)}`).join(""):empty(5)}</tbody></table></div>`;
+  if(t==="exp")return `<div class="ptbl xtbl"><table><thead><tr><th>품목코드</th><th>품목명</th><th>판정</th><th class="r">임박·지남 수량</th><th>현장에 남은 소비기한</th></tr></thead><tbody>${rows.length?rows.map(r=>{
+      const end=X.days;const ls=r.fieldRows.filter(x=>x.field>0).map(x=>({...x,l:leftOf(x.date)})).sort((a,b)=>a.date.localeCompare(b.date));
+      return `<tr>${code(r)}<td>${pill(r.expJ)}</td><td class="r num"><b>${esc(F(r.expQty,r))}</b></td>
+      <td class="small">${ls.map(x=>`<span class="${x.l<0?"xneg":x.l<=end?"xwarn":"muted"}"><span class="num">${dd(x.date)}</span> ${esc(F(x.field,r))} (${x.l<0?`${-x.l}일 지남`:x.l===0?"오늘까지":`${x.l}일 남음`})</span>`).join("<br>")}</td></tr>${drill(r,5)}`;}).join(""):empty(5)}</tbody></table></div>`;
+  if(t==="memo"||t==="none")return `<div class="ptbl xtbl"><table><thead><tr><th>품목코드</th><th>품목명</th><th class="r">전산 현재고</th><th>확인할 것</th></tr></thead><tbody>${rows.length?rows.map(r=>`<tr>${code(r)}
+      <td class="r num">${esc(F(r.stock,r))||"-"}</td><td class="small">${t==="none"?"현장 수량 미입력":[...r.entries.filter(e=>e.memo).map(e=>`현장 ${esc(e.exp||"(소비기한 없음)")} ${esc(e.qty)}${esc(e.unit||"")}: ${esc(e.memo)}`),...r.buys.filter(b=>b.memo).map(b=>`입고 ${dd(b.d)} 적요 '${esc(b.raw||"")}': ${esc(b.memo)}`)].join("<br>")}</td></tr>${drill(r,4)}`).join(""):empty(4)}</tbody></table></div>`;
+  return `<div class="ptbl xtbl"><table><thead><tr><th>품목코드</th><th>품목명</th><th class="r">전산 현재고</th><th class="r">현장 수량</th><th class="r">차이</th><th>재고</th><th>선입선출</th><th>가장 빠른 소비기한</th><th class="r">남은 일수</th><th>소비기한</th><th>확인 메모</th></tr></thead>
+      <tbody>${rows.length?rows.map(r=>rowHtml(r)).join(""):`<tr><td colspan="11" class="hempty">${t==="need"?"확인이 필요한 품목이 없습니다.":"점검 품목이 없습니다."}</td></tr>`}</tbody></table></div>`;
 }
 function rowHtml(r){
   const o=X.open.has(r.code);
@@ -8655,7 +8675,6 @@ function detailHtml(r){
       <div class="sub-wrap"><table class="subt"><thead><tr><th>소비기한</th><th>단위</th><th class="r">수량</th><th class="r">박스·낱개</th><th>확인</th><th></th></tr></thead><tbody>${ed||`<tr><td colspan="6" class="muted">아직 입력이 없습니다.</td></tr>`}</tbody></table></div>
       <div class="acts2" style="margin-top:6px"><button type="button" class="btn sm" data-entadd="${esc(r.code)}">+ 소비기한 줄 추가</button>
         <label class="small muted">입수량 <input type="text" id="${id("per")}" data-per="${esc(r.code)}" value="${esc(it.per)}" class="xin r num" style="width:60px" inputmode="decimal"></label>
-        <label class="small muted">카테고리 <input type="text" id="${id("cat")}" data-icat="${esc(r.code)}" value="${esc(catName(it))}" list="exCatList" class="xin" style="width:100px"></label><datalist id="exCatList">${[...new Set(X.items.map(catName).filter(Boolean))].map(c=>`<option value="${esc(c)}">`).join("")}</datalist>
         <label class="small muted">줄임말 <input type="text" id="${id("al")}" data-alias="${esc(r.code)}" value="${esc(it.alias||"")}" placeholder="예: 고구마" class="xin" style="width:100px"></label>
         <span class="sp"></span>${X.del===r.code?`<button type="button" class="btn sm danger" data-itemdelok="${esc(r.code)}">삭제 확인</button><button type="button" class="btn sm" data-itemdelno="1">취소</button>`:`<button type="button" class="btn sm danger" data-itemdel="${esc(r.code)}">점검 품목에서 빼기</button>`}</div></section>
     ${linkHtml(r,it,id)}
@@ -8665,9 +8684,6 @@ function detailHtml(r){
   </div>`;
 }
 const r2=x=>Math.round(x*100)/100;
-/* 카테고리 이름: 직접 정한 값, 없으면 품목명으로 자동 (샐러드·푸딩·요거트·계란 …) */
-const CAT_AUTO=[["샐러드",/샐러드/],["푸딩",/푸딩/],["요거트",/요거트/],["계란",/계란|난백|전란|난황/],["무스·디저트",/무스|케이크|티라미/],["치즈",/치즈/],["소스·드레싱",/소스|드레싱|마요/]];
-function catName(it){if(!it)return "";if(it.cat)return it.cat;const n=String(it.name||"").split("_")[0];for(const [c,re] of CAT_AUTO)if(re.test(n))return c;return "기타";}
 /* 모코드·자코드 연결: 재고·입고를 한 품목으로 합침 (각 코드 1단위 = 낱개 n개) */
 const stem=n=>String(n||"").replace(/^\[[^\]]*\]\s*/,"").split(/[_(]/)[0].replace(/\s+/g,"");
 function linkCand(it){
@@ -8719,14 +8735,7 @@ function bind(R){
   $("exDays").onchange=e=>{X.days=Math.max(0,+e.target.value||0);saveA();render();};
   const py=$("exPendY");if(py)py.onclick=()=>{X.items=X.pend.items;X.pend=null;saveA(true);render();toast("현장 입력을 엑셀 내용으로 바꿨습니다");};
   const pn=$("exPendN");if(pn)pn.onclick=()=>{X.pend=null;render();};
-  root.querySelectorAll("[data-only]").forEach(b=>b.onclick=()=>{X.only=b.dataset.only==="1";render();});
-  root.querySelectorAll("[data-cat]").forEach(b=>b.onclick=()=>{X.cat=b.dataset.cat;render();});
-  root.querySelectorAll("[data-cg]").forEach(b=>b.onclick=()=>{const c=b.dataset.cg;X.catOpen[c]=X.catOpen[c]===false;render();});
-  const vis=()=>[...root.querySelectorAll("[data-x]")].map(b=>b.dataset.x);
-  root.querySelectorAll("[data-cgopen]").forEach(b=>b.onclick=()=>{const c=b.dataset.cgopen;X.catOpen[c]=true;
-    const codes=X.items.filter(i=>(catName(i)||"기타")===c).map(i=>i.code).filter(cd=>vis().includes(cd));const all=codes.every(cd=>X.open.has(cd));codes.forEach(cd=>all?X.open.delete(cd):X.open.add(cd));render();});
-  const oa=$("exOpenAll");if(oa)oa.onclick=()=>{const v=vis();const all=v.length&&v.every(cd=>X.open.has(cd));v.forEach(cd=>all?X.open.delete(cd):X.open.add(cd));render();};
-  root.querySelectorAll("[data-icat]").forEach(el=>el.addEventListener("change",()=>{const it=X.items.find(x=>x.code===el.dataset.icat);if(!it)return;const v=el.value.trim();if(v&&v!==catName(Object.assign({},it,{cat:""})))it.cat=v;else delete it.cat;saveA();render();}));
+  root.querySelectorAll("[data-tab]").forEach(b=>b.onclick=()=>{const t=b.dataset.tab;X.tab=X.tab===t&&t!=="need"?"need":t;render();});
   root.querySelectorAll("[data-x]").forEach(b=>b.onclick=()=>{const c=b.dataset.x;X.open.has(c)?X.open.delete(c):X.open.add(c);render();});
   root.querySelectorAll("[data-ent]").forEach(el=>el.addEventListener("change",()=>{const [c,i,k]=el.dataset.ent.split("|");const it=X.items.find(x=>x.code===c);if(!it)return;
     const e=it.entries[+i];e[k]=k==="qty"?(el.value.replace(/[^\d.\-]/g,"")===""?"":Number(el.value.replace(/[^\d.\-]/g,""))):el.value.trim();saveA();render();}));
@@ -8772,13 +8781,20 @@ async function xlsx(R){
   const S=R.sum;ws.getCell(3,1).value=`재고 안 맞음 ${S.stock} · 선입선출 의심 ${S.fifo} · 임박·지남 ${S.exp} · 미기재 ${S.none} · 입력 확인 ${S.memo} (점검 ${S.items}품목)`;ws.getCell(3,1).font={name:"맑은 고딕",size:10,bold:true};
   const hr=5;cols.forEach((c,i)=>{const x=ws.getCell(hr,i+1);x.value=c[0];x.font=Object.assign({},font,{bold:true});x.fill=head;x.border=box;x.alignment={horizontal:"center",vertical:"middle",wrapText:true};});
   const red={argb:"FFB13838"},amb={argb:"FFA8701A"};
-  const cOf=r=>catName(X.items.find(i=>i.code===r.code))||"기타";const order=[];R.rows.forEach(r=>{const c=cOf(r);if(!order.includes(c))order.push(c);});
-  let line=hr+1;const seq=[];for(const c of order){seq.push({cat:c,n:R.rows.filter(r=>cOf(r)===c).length});R.rows.filter(r=>cOf(r)===c).forEach(r=>seq.push(r));}
-  seq.forEach((r,idx)=>{if(r.cat!==undefined&&!r.code){ws.mergeCells(line,1,line,cols.length);const x=ws.getCell(line,1);x.value=`${r.cat} (${r.n}품목)`;x.font=Object.assign({},font,{bold:true});x.fill={type:"pattern",pattern:"solid",fgColor:{argb:"FFE3EEE5"}};x.border=box;line++;return;}
-    const i=line-hr-1;line++;const v=[r.code,r.name,F(r.stock,r)||"-",r.n?F(r.field,r):"미기재",r.n&&r.diff!=null?F(r.diff,r):"-",r.stockJ,r.fifoJ,r.fifo>0?F(r.fifo,r):"-",r.first||"-",r.left==null?"":r.left,r.expJ,r.expQty>0?F(r.expQty,r):"-",r.memo];
+  R.rows.forEach((r,i)=>{const v=[r.code,r.name,F(r.stock,r)||"-",r.n?F(r.field,r):"미기재",r.n&&r.diff!=null?F(r.diff,r):"-",r.stockJ,r.fifoJ,r.fifo>0?F(r.fifo,r):"-",r.first||"-",r.left==null?"":r.left,r.expJ,r.expQty>0?F(r.expQty,r):"-",r.memo];
     v.forEach((val,j)=>{const x=ws.getCell(hr+1+i,j+1);x.value=val;x.font=Object.assign({},font);x.border=box;x.alignment={vertical:"middle",horizontal:[2,3,4,7,9,11].includes(j)?"right":[5,6,10].includes(j)?"center":"left"};
       if((j===5&&/현장이/.test(val))||(j===10&&val==="지남"))x.font=Object.assign({},font,{bold:true,color:red});
       if((j===6&&val==="의심")||(j===10&&val==="임박"))x.font=Object.assign({},font,{bold:true,color:amb});});});
+  /* 항목별 시트: 재고 차이 · 선입선출 의심 · 임박·지남 */
+  const sheet=(name,head,widths,data)=>{const w=wb.addWorksheet(name);head.forEach((h,i)=>{w.getColumn(i+1).width=widths[i];const x=w.getCell(1,i+1);x.value=h;x.font=Object.assign({},font,{bold:true});x.fill=head2;x.border=box;x.alignment={horizontal:"center",vertical:"middle"};});
+    data.forEach((row,ri)=>row.forEach((v,j)=>{const x=w.getCell(ri+2,j+1);x.value=v;x.font=Object.assign({},font);x.border=box;x.alignment={vertical:"top",wrapText:true};}));w.views=[{state:"frozen",ySplit:1}];};
+  const head2=head;
+  sheet("재고 차이",["품목코드","품목명","전산 현재고","현장 수량","차이","판정","전산 재고 (코드별)","현장 수량 (소비기한별)"],[11,30,12,12,10,11,26,34],
+    tabRows(R,"stock").map(r=>[r.code,r.name,F(r.stock,r),F(r.field,r),F(r.diff,r),r.stockJ,(r.stockBy||[]).map(x=>`${x.code} ${x.q} ${x.unit}`).join("\n"),r.fieldRows.map(x=>`${dd(x.date)} ${F(x.field,r)}`).join("\n")]));
+  sheet("선입선출 의심",["품목코드","품목명","어긋난 수량","남아 있으면 안 되는 소비기한","모자라는 늦은 소비기한"],[11,30,12,40,40],
+    tabRows(R,"fifo").map(r=>[r.code,r.name,F(r.fifo,r),r.fieldRows.filter(x=>x.fifo>0).map(x=>`${dd(x.date)} 현장 ${F(x.field,r)} · 남아 있어야 ${F(x.expect,r)} → ${F(x.fifo,r)} 많음`).join("\n"),r.groups.filter(g=>g.short>0).map(g=>`${dd(g.exp)} 남아 있어야 ${F(g.expect,r)} · 현장 ${F(g.field,r)} → ${F(g.short,r)} 부족`).join("\n")]));
+  sheet("임박·지남",["품목코드","품목명","판정","임박·지남 수량","현장에 남은 소비기한"],[11,30,9,13,44],
+    tabRows(R,"exp").map(r=>[r.code,r.name,r.expJ,F(r.expQty,r),r.fieldRows.filter(x=>x.field>0).sort((a,b)=>a.date.localeCompare(b.date)).map(x=>{const l=leftOf(x.date);return `${dd(x.date)} ${F(x.field,r)} (${l<0?-l+"일 지남":l===0?"오늘까지":l+"일 남음"})`;}).join("\n")]));
   const buf=await wb.xlsx.writeBuffer();const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([buf]));a.download=`소비기한점검_${X.base.replace(/-/g,"")}.xlsx`;document.body.appendChild(a);a.click();setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove();},4000);
 }
 window.EXPIRY={show(){X.base=X.base||today();if(!X.on){X.on=true;render();X.lp=X.lp||load();}else render();},
