@@ -6692,6 +6692,31 @@ render(); renderCmp();
   dlSubscribe();
   await accInit();
 })();
+/* 통합 '자료 올리기'에서 쓰는 입구: 파일이 어느 탭에 맞는지 보고, 그 탭으로 보냄 */
+window.CLOSE_HUB={
+  probe(wb, name){
+    const out=[], sns=wb.SheetNames, cache={};
+    const raw=sn=>(cache['r'+sn]=cache['r'+sn]||XLSX.utils.sheet_to_json(wb.Sheets[sn],{header:1,raw:true,defval:null}));
+    const txt=sn=>(cache['t'+sn]=cache['t'+sn]||XLSX.utils.sheet_to_json(wb.Sheets[sn],{header:1,raw:false,defval:null}));
+    const tryEach=fn=>{ for(const sn of sns){ try{ const r=fn(sn); if(r) return r; }catch(e){} } return null; };
+    const run=tryEach(sn=>{ const p=C.parseSheet(raw(sn),name,{machoCodes}); if(p.error) return null; const ks=Object.keys(p.groups).filter(k=>p.groups[k].length); const known=ks.reduce((a,k)=>a+p.groups[k].length,0);
+      if(!known||(p.unknown&&p.unknown.length>known)) return null; return '업로드 만들기 · '+ks.map(k=>C.COS[k].label).join('·'); });
+    if(run) out.push({tab:'run',label:run});
+    const cmp=tryEach(sn=>{ const r=M.detect(raw(sn),name,undefined,sn); if(!r||r.error) return null; const parts=r.split?Object.values(r.split):[r];
+      return '마감 비교 · '+parts.map(q=>{ const co=q.co||r.co; return ((co&&M.CO_LABEL[co])?M.CO_LABEL[co]+' ':'')+(co==='smartfood'&&q.role==='buy'?'스마트푸드 입고내역':(M.ROLES[q.role]||{}).label||q.role); }).join(', '); });
+    if(cmp) out.push({tab:'cmp',label:cmp});
+    if(tryEach(sn=>ssParseSheet(txt(sn)))) out.push({tab:'ss',label:'숙성도 발주'});
+    if(tryEach(sn=>{ const p=Daily.parseSheet(txt(sn)); return p&&p.rows&&p.rows.length?p:null; })) out.push({tab:'daily',label:'일일배송'});
+    return out.filter(x=>!ACC.allowed||ACC.allowed.has(x.tab));
+  },
+  async send(tab, files){
+    if(tab==='run') await addFiles(files);
+    else if(tab==='cmp') await addCmp(files);
+    else if(tab==='ss'){ for(const f of files) await ssAddFile(f); }
+    else if(tab==='daily') await dlAdd(files);
+  },
+  go(which){ const t={run:'#tab-run',cmp:'#tab-cmp',ss:'#tab-ss',daily:'#tab-daily'}[which]; const b=t&&$(t); if(b) b.click(); }
+};
 })();
 
 };</script>
@@ -8534,6 +8559,7 @@ function render(){
       </div>
       ${X.pend?`<div class="note warn xpend">${esc(X.pend.file)}에 현장 입력이 ${X.pend.items.length}품목 들어 있습니다. 지금 입력한 내용을 이 엑셀 내용으로 바꿀까요? <button class="btn sm primary" type="button" id="exPendY">엑셀 내용으로 바꾸기</button><button class="btn sm" type="button" id="exPendN">지금 입력 유지</button></div>`:""}
     </div>
+    ${!X.items.length?`<div class="panel2 xquick"><div class="qhead"><h2>빠른 입력</h2></div><p class="pnote" style="margin:6px 0 0">점검 품목이 아직 없어서 빠른 입력을 쓸 수 없습니다. 위 <b>자료</b> 칸에 점검 엑셀(소비기한 시트가 있는 파일)을 올리거나, 맨 아래 <b>점검 품목 추가</b>에서 품목을 넣으면 이 칸이 열립니다.</p></div>`:""}
     ${X.items.length?`<div class="panel2 xquick"><div class="qhead"><h2>빠른 입력</h2><span class="muted small">한 줄에 한 품목 · <b>품목 이름 일부 · 소비기한 · 수량</b></span></div>
       <textarea id="exQuick" rows="4" placeholder="스위트 11 1 6개&#10;단호박 11/15 2박스 3개 11/20 5박스&#10;콘 1118 4박스" aria-label="빠른 입력">${esc(X.quick)}</textarea>
       <div id="exQPrev">${quickPrev()}</div>
@@ -8698,7 +8724,13 @@ async function xlsx(R){
       if((j===6&&val==="의심")||(j===10&&val==="임박"))x.font=Object.assign({},font,{bold:true,color:amb});});});
   const buf=await wb.xlsx.writeBuffer();const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([buf]));a.download=`소비기한점검_${X.base.replace(/-/g,"")}.xlsx`;document.body.appendChild(a);a.click();setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove();},4000);
 }
-window.EXPIRY={show(){X.base=X.base||today();if(!X.on){X.on=true;render();load();}else render();}};
+window.EXPIRY={show(){X.base=X.base||today();if(!X.on){X.on=true;render();X.lp=X.lp||load();}else render();},
+  /* 통합 자료 올리기: 이 파일이 소비기한 점검에 쓰이는지 */
+  probe(wb){for(const sn of wb.SheetNames){try{const aoa=XLSX.utils.sheet_to_json(wb.Sheets[sn],{header:1,raw:true,defval:null});
+      const st=EXP.parseStock(aoa);if(st&&st.count)return "소비기한 점검 · 현재고";
+      const bu=EXP.parseBuy(aoa);if(bu&&bu.count)return "소비기한 점검 · 입고 소비기한";
+      const fi=EXP.parseField(aoa);if(fi&&fi.items.length)return "소비기한 점검 · 현장 입력";}catch(e){}}return null;},
+  async add(files){X.on=true;await (X.lp=X.lp||load());await readFiles(files);}};
 })();
 </script>
 <script>(function(){
