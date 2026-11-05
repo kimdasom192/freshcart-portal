@@ -67,6 +67,8 @@ service cloud.firestore {
 
     // 견적서: 견적서 권한이 있는 사람끼리 같은 목록을 함께 씀
     match /quotes/{d} { allow read, write: if hasAny(['quote']); }
+    // 받은 견적: 견적서 권한이 있는 사람끼리 함께 저장·검색
+    match /rquotes/{d} { allow read, write: if hasAny(['quote']); }
 
     // 소비기한 폐기 기록: 소비기한 점검 권한이 있는 사람 모두 보고 기록, 지우기는 기록한 본인·관리자
     match /expiryDisposal/{d} {
