@@ -301,6 +301,7 @@ button,input,select{font:inherit;color:inherit}
 .rqlink{min-width:170px}.rqsg{display:flex;flex-direction:column;gap:3px;margin-top:4px;align-items:flex-start}
 .rqgood{color:var(--ok)}.xneg{color:var(--bad)}
 .chip2{border:1px dashed var(--line);background:var(--surface);color:var(--ink);border-radius:999px;padding:2px 9px;font-size:11.5px;cursor:pointer;text-align:left}.chip2:hover{border-color:var(--forest)}
+.rqsup{min-width:170px;line-height:1.6}.rqsup .cur b{color:var(--forest)}
 /* 소비기한 점검 */
 .xpage .muted{color:var(--muted)}.xpage .small,.xpage small{font-size:12px}
 .xpage .sp{flex:1}
@@ -8433,13 +8434,14 @@ function setSave(t,bad){const el=$("rqSave");if(el){el.textContent=t;el.classLis
 function ctx(){return window.MAPI&&MAPI.ready&&MAPI.ready()&&MAPI.ctx?MAPI.ctx():null;}
 function index(){if(R.idx)return R.idx;const X=ctx();if(!X)return null;const P=X.P,SD=X.SD;
   const items=new Map();const add=(src,k)=>{for(const c in src){const v=src[c]||[];if(!items.has(c))items.set(c,{code:c,name:v[0]||"",spec:v[1]||"",unit:v[2]||""});}};add(P.items);add(SD.items);
-  const buy=new Map();for(const r of P.rows){const b=buy.get(r[2]);if(!b||r[0]>=b.d)buy.set(r[2],{d:r[0],sup:P.sups[r[1]]||"",q:r[3],p:r[4]});}
+  const buy=new Map(),sups=new Map();for(const r of P.rows){const b=buy.get(r[2]);if(!b||r[0]>=b.d)buy.set(r[2],{d:r[0],sup:P.sups[r[1]]||"",q:r[3],p:r[4]});
+    let m=sups.get(r[2]);if(!m){m=new Map();sups.set(r[2],m);}const sn=P.sups[r[1]]||"";const o=m.get(sn)||{sup:sn,d:0,p:0,q:0};if(r[0]>=o.d){o.d=r[0];o.p=r[4];}o.q+=r[3];m.set(sn,o);}
   let mx=0;for(const r of SD.rows)if(r[0]>mx)mx=r[0];
   let from=(()=>{const y=Math.floor(mx/1e4),m=Math.floor(mx/100)%100,d=mx%100;const t=new Date(Date.UTC(y,m-1,d)-90*864e5);return t.getUTCFullYear()*1e4+(t.getUTCMonth()+1)*100+t.getUTCDate();})();
   const sale=new Map();for(const r of SD.rows){if(r[0]<from)continue;let m=sale.get(r[2]);if(!m){m=new Map();sale.set(r[2],m);}const c=m.get(r[1])||{q:0,a:0};c.q+=r[3];c.a+=r[4];m.set(r[1],c);}
   const top=new Map();for(const [code,m] of sale){let best=null;for(const [ci,v] of m){if(v.q>0&&(!best||v.q>best.q))best={cust:SD.custs[ci]||"",q:v.q,a:v.a};}if(best)top.set(code,Object.assign(best,{p:best.a/best.q,n:m.size}));}
   const fd=d=>d?`${Math.floor(d/1e4)}.${String(Math.floor(d/100)%100).padStart(2,"0")}.${String(d%100).padStart(2,"0")}`:"";
-  if(!mx)from=0;R.idx={items,buy,top,fd,list:[...items.values()].sort((a,b)=>a.name.localeCompare(b.name,"ko")),since:fd(from),until:fd(mx)};return R.idx;}
+  if(!mx)from=0;R.idx={items,buy,sups,top,fd,list:[...items.values()].sort((a,b)=>a.name.localeCompare(b.name,"ko")),since:fd(from),until:fd(mx)};return R.idx;}
 function suggest(name,n){const I=index();if(!I||!name)return [];const k=squash(name);if(k.length<2)return [];
   const bi=s=>{const o=new Set();for(let i=0;i<s.length-1;i++)o.add(s.slice(i,i+2));return o;};const kb=bi(k);
   return I.list.map(it=>{const nb=bi(squash(it.name));let hit=0;for(const g of kb)if(nb.has(g))hit++;return {it,sc:hit/Math.max(1,kb.size)};}).filter(x=>x.sc>=0.5).sort((a,b)=>b.sc-a.sc).slice(0,n||5).map(x=>x.it);}
@@ -8450,7 +8452,8 @@ function compare(it){const I=index();if(!I||!it.link||!it.code)return null;const
   const boxOur=/^(bx|box|박스|cs)$/.test(ou),pieceQ=/^(봉|ea|개|pk|팩|병|캔|kg|g)$/.test(qu)||(!qu&&false);
   const conv=num(it.conv)!=null?num(it.conv):(boxOur&&pieceQ&&qa?qa:1);
   const cost=base==null||!(p>0)?null:base*conv;const b=I.buy.get(it.code),t=I.top.get(it.code);
-  return {m,cost,conv,convAuto:num(it.conv)==null,buy:b,top:t,diff:cost!=null&&b&&b.p?(cost-b.p)/b.p:null,
+  const sl=[...((I.sups.get(it.code)||new Map()).values())].sort((a,b)=>b.d-a.d);
+  return {m,cost,conv,convAuto:num(it.conv)==null,buy:b,top:t,sups:sl,diff:cost!=null&&b&&b.p?(cost-b.p)/b.p:null,
     mNew:cost!=null&&t&&t.p?(t.p-cost)/t.p:null,mOld:b&&t&&t.p?(t.p-b.p)/t.p:null};}
 
 /* ---------- 파일 읽기: PDF(글자 있는 것) · 엑셀 · 가져오기 파일(JSON) ---------- */
@@ -8574,7 +8577,7 @@ function render(){const m=$("rqMain");if(!m)return;
   bindTop();bindMain();}
 function catHtml(q,c){const its=q.items.filter(i=>(i.cat||"")===c);const I=index();
   return `<section class="panel2 rqcat"><div class="qhead"><h2><input type="text" class="rqcatname" data-cat="${esc(c)}" value="${esc(c)}" placeholder="카테고리 없음 (이름을 넣으면 나뉨)" aria-label="카테고리 이름"></h2><span class="muted small">${its.length}품목</span></div>
-    <div class="ptbl rqtbl"><table><thead><tr><th>제품명</th><th>원산지</th><th>규격</th><th>단위</th><th class="r">입수</th><th class="r">단가</th><th>VAT</th><th>과면세</th><th>비고</th><th>우리 품목 연결</th>${I?`<th class="r">기존 매입단가</th><th class="r">견적(환산)</th><th class="r">차이</th><th>최다 매출처 · 판매가</th><th class="r">마진율 (기존 → 견적)</th>`:""}<th></th></tr></thead>
+    <div class="ptbl rqtbl"><table><thead><tr><th>제품명</th><th>원산지</th><th>규격</th><th>단위</th><th class="r">입수</th><th class="r">단가</th><th>VAT</th><th>과면세</th><th>비고</th><th>우리 품목 연결</th>${I?`<th>기존 매입처</th><th class="r">최근 매입단가</th><th class="r">견적(환산)</th><th class="r">차이</th><th>최다 매출처 · 판매가</th><th class="r">마진율 (기존 → 견적)</th>`:""}<th></th></tr></thead>
     <tbody>${its.map(it=>rowHtml(it,I)).join("")}</tbody></table></div>
     <div class="acts2" style="margin-top:6px"><button type="button" class="btn sm" data-additem="${esc(c)}">+ 품목 추가</button></div></section>`;}
 function rowHtml(it,I){const c=compare(it);const sg=it.link&&!it.code?suggest(it.name,4):[];const inp=(k,w,cls)=>`<input type="text" class="xin ${cls||""}" style="width:${w}px" data-f="${esc(it.id)}|${k}" value="${esc(it[k])}">`;
@@ -8590,10 +8593,10 @@ function rowHtml(it,I){const c=compare(it);const sg=it.link&&!it.code?suggest(it
         ${c&&c.m?`<div class="small">${esc(c.m.name)} <span class="muted">${esc(c.m.spec)} · ${esc(c.m.unit)}</span></div>`:c&&c.missing?`<div class="small xneg">마진율 자료에 없는 코드</div>`:""}
         ${sg.length?`<div class="rqsg">${sg.map(s=>`<button type="button" class="chip2" data-pick="${esc(it.id)}|${esc(s.code)}">${esc(s.code)} ${esc(s.name)}</button>`).join("")}</div>`:""}
         ${c&&c.m?`<div class="small muted">환산 × <input type="text" class="xin r num" style="width:44px" data-f="${esc(it.id)}|conv" value="${esc(it.conv)}" placeholder="${esc(c.conv)}">${c.convAuto&&c.conv!==1?" (입수)":""}</div>`:""}`:""}</td>
-    ${I?(c&&c.m?`<td class="r num">${c.buy?won(c.buy.p)+`<div class="muted small">${esc(I.fd(c.buy.d))} · ${esc(c.buy.sup)}</div>`:"-"}</td>
+    ${I?(c&&c.m?`<td class="small rqsup">${c.sups.length?c.sups.slice(0,4).map((x,i)=>`<div${i===0?' class="cur"':""}><b>${esc(x.sup||"-")}</b> <span class="num">${won(x.p)}</span> <span class="muted">${esc(I.fd(x.d))}</span></div>`).join("")+(c.sups.length>4?`<div class="muted">외 ${c.sups.length-4}곳</div>`:""):"매입 기록 없음"}</td><td class="r num">${c.buy?won(c.buy.p)+`<div class="muted small">${esc(I.fd(c.buy.d))} · ${esc(c.buy.sup)}</div>`:"-"}</td>
       <td class="r num">${c.cost!=null?won(c.cost):"-"}</td><td class="r num ${c.diff>0?"xneg":c.diff<0?"rqgood":""}">${c.diff!=null?(c.diff>0?"+":"")+pct(c.diff):"-"}</td>
       <td class="small">${c.top?`${esc(c.top.cust)}<div class="num">${won(c.top.p)} <span class="muted">· ${Math.round(c.top.q).toLocaleString("ko-KR")}개</span></div>`:"-"}</td>
-      <td class="r num">${pct(c.mOld)} → <b class="${c.mNew!=null&&c.mOld!=null&&c.mNew<c.mOld?"xneg":c.mNew!=null&&c.mOld!=null&&c.mNew>c.mOld?"rqgood":""}">${pct(c.mNew)}</b></td>`:`<td colspan="5" class="muted small">${it.link?"품목코드를 넣으면 비교합니다":"연결 안 함"}</td>`):""}
+      <td class="r num">${pct(c.mOld)} → <b class="${c.mNew!=null&&c.mOld!=null&&c.mNew<c.mOld?"xneg":c.mNew!=null&&c.mOld!=null&&c.mNew>c.mOld?"rqgood":""}">${pct(c.mNew)}</b></td>`:`<td colspan="6" class="muted small">${it.link?"품목코드를 넣으면 비교합니다":"연결 안 함"}</td>`):""}
     <td><button type="button" class="x" data-del="${esc(it.id)}" aria-label="품목 빼기">×</button></td></tr>`;}
 function bindTop(){const g=$("rqG");if(!g)return;const go=()=>{R.gq=g.value.trim();render();};$("rqGGo").onclick=go;g.onkeydown=e=>{if(e.key==="Enter"){e.preventDefault();go();}};
   const gc=$("rqGClear");if(gc)gc.onclick=()=>{R.gq="";render();};
@@ -8616,13 +8619,13 @@ function bindMain(){const q=R.cur,m=$("rqMain");
   $("rqXlsx").onclick=()=>xlsx(q).catch(()=>toast("엑셀을 만들지 못했습니다"));}
 async function xlsx(q){if(!window.ExcelJS){toast("엑셀 도구를 불러오지 못했습니다");return;}const wb=new ExcelJS.Workbook();const ws=wb.addWorksheet("받은 견적");
   const thin={style:"thin",color:{argb:"FF8C8C8C"}},box={top:thin,left:thin,bottom:thin,right:thin},font={name:"맑은 고딕",size:10};
-  const I=index();const H=["카테고리","제품명","원산지","규격","단위","입수","단가","VAT","과면세","비고","연결 품목코드",...(I?["기존 매입단가","견적(환산)","차이","최다 매출처","판매가","마진율(기존)","마진율(견적)"]:[])];
+  const I=index();const H=["카테고리","제품명","원산지","규격","단위","입수","단가","VAT","과면세","비고","연결 품목코드",...(I?["기존 매입처","기존 매입단가","견적(환산)","차이","최다 매출처","판매가","마진율(기존)","마진율(견적)"]:[])];
   ws.mergeCells(1,1,1,H.length);ws.getCell(1,1).value=`${q.vendor||""} 견적 · ${q.date||""}`;ws.getCell(1,1).font={name:"맑은 고딕",size:14,bold:true};
   ws.getCell(2,1).value=q.terms||"";ws.getCell(2,1).font={name:"맑은 고딕",size:9,color:{argb:"FF555555"}};
-  H.forEach((h,i)=>{const x=ws.getCell(4,i+1);x.value=h;x.font=Object.assign({},font,{bold:true});x.fill={type:"pattern",pattern:"solid",fgColor:{argb:"FFF2F2F2"}};x.border=box;ws.getColumn(i+1).width=[12,26,9,18,6,6,10,6,7,22,12,12,12,8,18,10,10,10][i]||12;});
+  H.forEach((h,i)=>{const x=ws.getCell(4,i+1);x.value=h;x.font=Object.assign({},font,{bold:true});x.fill={type:"pattern",pattern:"solid",fgColor:{argb:"FFF2F2F2"}};x.border=box;ws.getColumn(i+1).width=[12,26,9,18,6,6,10,6,7,22,12,30,12,12,8,18,10,10,10][i]||12;});
   q.items.forEach((it,r)=>{const c=compare(it);const v=[it.cat,it.name,it.origin,it.spec,it.unit,num(it.qty),num(it.price)>0?num(it.price):"단가 없음",it.vat,it.tax,it.note,it.link?it.code:"",
-      ...(I?(c&&c.m?[c.buy?c.buy.p:"",c.cost,c.diff,c.top?c.top.cust:"",c.top?Math.round(c.top.p):"",c.mOld,c.mNew]:["","","","","","",""]):[])];
-    v.forEach((val,j)=>{const x=ws.getCell(5+r,j+1);x.value=val==null?"":val;x.font=Object.assign({},font);x.border=box;if(typeof val==="number"){x.numFmt=[13,16,17].includes(j)?"0.0%":"#,##0";}});});
+      ...(I?(c&&c.m?[c.sups.map(x=>`${x.sup} ${Math.round(x.p).toLocaleString("ko-KR")}원(${I.fd(x.d)})`).join("\n"),c.buy?c.buy.p:"",c.cost,c.diff,c.top?c.top.cust:"",c.top?Math.round(c.top.p):"",c.mOld,c.mNew]:["","","","","","","",""]):[])];
+    v.forEach((val,j)=>{const x=ws.getCell(5+r,j+1);x.value=val==null?"":val;x.font=Object.assign({},font);x.border=box;if(typeof val==="number"){x.numFmt=[14,17,18].includes(j)?"0.0%":"#,##0";}});});
   const buf=await wb.xlsx.writeBuffer();const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([buf]));a.download=`받은견적_${(q.vendor||"업체").replace(/[\\/:*?"<>|]/g,"")}_${(q.date||"").replace(/-/g,"")}.xlsx`;document.body.appendChild(a);a.click();setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove();},4000);}
 
 window.RQUOTE={reindex(){R.idx=null;render();},show(el){if(!el)return;if(!$("rqMain"))shell(el);init();render();renderList();},flush};
