@@ -8814,7 +8814,7 @@ if(typeof module!=="undefined"&&module.exports)module.exports=api;else root.EXP=
 </script>
 <script>(function(){
 "use strict";
-/* ===== 소비기한 점검 (관리자 전용 · 나만 보기): data/users/<나>/expiry, data/users/<나>/expiryData ===== */
+/* ===== 소비기한 점검: 권한 있는 사람 모두 같이 보는 expiryShared/main(품목·현장 입력) · expiryShared/data(올린 자료) ===== */
 const $=id=>document.getElementById(id);
 const esc=s=>String(s==null?"":s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 function toast(t){const el=document.createElement("div");el.className="ptoast";el.textContent=t;document.body.appendChild(el);setTimeout(()=>el.remove(),2600);}
@@ -8822,7 +8822,9 @@ const today=()=>new Intl.DateTimeFormat("en-CA",{timeZone:"Asia/Seoul"}).format(
 const md=s=>s?`${+s.slice(5,7)}/${+s.slice(8,10)}`:"";
 const X={disp:[],dform:null,dmon:"",dadd:{code:"",exp:"",qty:"",unit:"pk",reason:"소비기한 지남",memo:""},tab:"need",quick:"",lnk:{},on:false,items:[],days:7,base:today(),stock:null,buy:null,open:new Set(),only:true,pend:null,timer:null,loaded:false,add:{code:"",per:""},del:null};
 const db=()=>window.FC&&window.FC.db, pid=()=>window.FC&&window.FC.profile&&window.FC.profile.pid;
-const docA=()=>db().doc(`data/users/${pid()}/expiry`), docB=()=>db().doc(`data/users/${pid()}/expiryData`);
+const docA=()=>db().doc("expiryShared/main"), docB=()=>db().doc("expiryShared/data");
+/* 예전에 나만 보기로 저장한 자료(data/users/<나>/…)는 공유 자료가 비어 있을 때 한 번 옮겨 줌 */
+const oldA=()=>db().doc(`data/users/${pid()}/expiry`), oldB=()=>db().doc(`data/users/${pid()}/expiryData`);
 /* 폐기 기록: 소비기한 점검 권한이 있는 사람 모두 같이 보는 expiryDisposal/<id> */
 const dispCol=()=>db().collection("expiryDisposal");
 const me=()=>(window.FC&&window.FC.profile)||{};
@@ -8844,17 +8846,23 @@ async function addDisp(rec,minus){
 }
 async function load(){
   subDisp();
-  try{const [a,b]=await Promise.all([docA().get(),docB().get()]);
+  try{let [a,b]=await Promise.all([docA().get(),docB().get()]);
+    if(!a.exists){try{const [oa,ob]=await Promise.all([oldA().get(),oldB().get()]);
+      if(oa.exists){await docA().set(Object.assign({},oa.data(),{movedFrom:me().name||"",updatedAt:Date.now()}));if(ob.exists)await docB().set(ob.data());[a,b]=await Promise.all([docA().get(),docB().get()]);toast("나만 보던 소비기한 점검 자료를 함께 보는 자료로 옮겼습니다");}}catch(e){}}
     if(a.exists){const d=a.data()||{};X.items=d.items||[];X.days=d.days||7;}
     if(b.exists){const d=b.data()||{};X.stock=d.stock||null;X.buy=d.buy||null;}}catch(e){toast("저장된 점검 자료를 불러오지 못했습니다");}
   X.loaded=true;render();
+  /* 다른 사람이 고친 내용도 바로 반영 (내가 입력 중일 때는 기다림) */
+  try{docA().onSnapshot(s=>{if(!s.exists||X.timer&&X.pendingA)return;const d=s.data()||{};if((d.updatedAt||0)<=(X.lastA||0))return;X.lastA=d.updatedAt;X.items=d.items||[];X.days=d.days||7;
+      if(d.by&&d.by!==me().name)setSave(`${d.by}님이 고침 · ${new Date(d.updatedAt).toTimeString().slice(0,5)}`);render();},()=>{});
+    docB().onSnapshot(s=>{if(!s.exists)return;const d=s.data()||{};if((d.updatedAt||0)<=(X.lastB||0))return;X.lastB=d.updatedAt;X.stock=d.stock||null;X.buy=d.buy||null;render();},()=>{});}catch(e){}
 }
-function saveA(now){clearTimeout(X.timer);const go=()=>docA().set({items:X.items,days:X.days,updatedAt:Date.now()}).then(()=>setSave("저장됨 · "+new Date().toTimeString().slice(0,5))).catch(()=>setSave("저장하지 못했습니다",true));
+function saveA(now){clearTimeout(X.timer);X.pendingA=true;const go=()=>{const t=Date.now();X.lastA=t;X.pendingA=false;return docA().set({items:X.items,days:X.days,by:me().name||"",updatedAt:t}).then(()=>setSave("저장됨 · "+new Date().toTimeString().slice(0,5))).catch(()=>setSave("저장하지 못했습니다 · 보안 규칙(expiryShared)을 확인해 주세요",true));};
   setSave("저장 대기…");X.timer=setTimeout(go,now?0:500);}
 function saveB(){let buy=X.buy;
   if(buy&&JSON.stringify(buy).length+JSON.stringify(X.stock||{}).length>900000){const keep=new Set(X.items.map(i=>i.code));buy=Object.assign({},buy,{rows:buy.rows.filter(r=>keep.has(r[1]))});
     toast("구매현황이 커서 점검 품목 입고만 저장합니다");}
-  return docB().set({stock:X.stock,buy,updatedAt:Date.now()}).catch(()=>toast("올린 자료를 저장하지 못했습니다"));}
+  const t=Date.now();X.lastB=t;return docB().set({stock:X.stock,buy,updatedAt:t}).catch(()=>toast("올린 자료를 저장하지 못했습니다"));}
 function setSave(t,bad){const el=$("exSave");if(el){el.textContent=t;el.classList.toggle("bad",!!bad);}}
 
 /* 파일 읽기: 시트마다 재고변동표·구매현황내역·소비기한(현장) 자동 구분 */
@@ -8886,7 +8894,7 @@ function render(){
   const rows=tabRows(R,X.tab);
   const ok=S.items&&!(S.stock+S.fifo+S.exp+S.none+S.memo);
   root.innerHTML=`<div class="page xpage">
-    <div class="page-h"><small>각자 따로 저장 · 나만 보기</small><h1>소비기한 점검</h1>
+    <div class="page-h"><small>권한 있는 사람이 함께 보는 자료</small><h1>소비기한 점검</h1>
       <p>재고변동표(현재고)와 구매현황내역(입고 소비기한)을 올리고 현장에서 센 소비기한별 수량을 입력하면, 재고 차이 · 선입선출 · 소비기한 임박을 품목별로 판정합니다. 수량은 낱개로 계산하고 입수량에 맞춰 박스·낱개로 보여 줍니다.</p></div>
     <div class="panel2">
       <div class="qhead"><h2>자료</h2><span class="qsave" id="exSave">자동 저장</span></div>
@@ -9222,7 +9230,7 @@ const VIEWS=[
   {v:"log",l:"업무일지",hash:"worklog",g:"업무",need:k=>k.has("log"),d:"주간 업무일지 작성·보고, 팀 공유"},
   {v:"check",l:"업무리스트",hash:"checklist",g:"업무",need:k=>k.has("check"),d:"사람마다 따로 만들어 쓰는 체크리스트·할 일 (나만 보기)"},
   {v:"quote",l:"견적서",hash:"quote",g:"관리",need:k=>k.has("quote"),d:"품목 정보를 넣으면 대표님 보고용과 거래처 전달용 견적서, 타겟가 비교까지"},
-  {v:"expiry",l:"소비기한 점검",hash:"expiry",g:"관리",need:k=>k.has("expiry"),d:"현재고와 입고 소비기한, 현장 수량을 비교해 재고 차이·선입선출·임박 품목 확인 (각자 따로 저장)"},
+  {v:"expiry",l:"소비기한 점검",hash:"expiry",g:"관리",need:k=>k.has("expiry"),d:"현재고와 입고 소비기한, 현장 수량을 비교해 재고 차이·선입선출·임박 품목 확인, 폐기 기록 (권한 있는 사람 함께 보기)"},
   {v:"users",l:"사용자·권한",hash:"people",owner:1,g:"관리"}];
 const MT=["margin","suggest","prices","changes","link","upload"];
 function hashToView(h){if(!h||h==="home")return "home";if(h==="slow")return "slow";if(MT.includes(h))return "margin";

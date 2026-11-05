@@ -70,13 +70,16 @@ service cloud.firestore {
     // 받은 견적: 견적서 권한이 있는 사람끼리 함께 저장·검색
     match /rquotes/{d} { allow read, write: if hasAny(['quote']); }
 
+    // 소비기한 점검 자료(품목·현장 입력·올린 재고/입고 자료): 소비기한 점검 권한이 있는 사람 모두 함께 보고 고침
+    match /expiryShared/{d} { allow read, write: if hasAny(['expiry']); }
+
     // 소비기한 폐기 기록: 소비기한 점검 권한이 있는 사람 모두 보고 기록, 지우기는 기록한 본인·관리자
     match /expiryDisposal/{d} {
       allow read, create: if hasAny(['expiry']);
       allow update, delete: if isAdmin() || (hasAny(['expiry']) && resource.data.uid == request.auth.uid);
     }
 
-    // 나만 보는 자료 (업무확인 체크리스트 등)
+    // 나만 보는 자료 (업무리스트·체크리스트)
     match /data/users/{pid}/{rest=**} { allow read, write: if ownPid(pid); }
   }
 }
