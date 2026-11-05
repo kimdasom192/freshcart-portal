@@ -6870,6 +6870,7 @@ function syncSummary() {
 
 /* ---------- comments ---------- */
 const notesFor = tid => S.notes.filter(n => n.task === tid).sort((a, b) => (a.at || 0) - (b.at || 0));
+let notePend = null;
 async function postNote(tid) {
   const box = document.getElementById("ci-" + tid); if (!box) return;
   const text = box.value.trim(); if (!text) return;
@@ -7953,7 +7954,9 @@ document.addEventListener("keydown", e => {
     if (e.key === "Enter" && !e.isComposing && t.classList.contains("f-title")) { e.preventDefault(); const s = f.querySelector(".f-sub"); if (s) s.focus(); else addSubRow(f); return; }
     if (e.key === "Backspace" && t.classList.contains("f-sub") && !t.value) { const row = t.closest(".frow"); const prev = row.previousElementSibling; e.preventDefault(); row.remove(); if (prev) prev.querySelector("input").focus(); else f.querySelector(".f-title").focus(); return; }
   }
-  if (t.id && t.id.startsWith("ci-") && e.key === "Enter" && !e.shiftKey && !e.isComposing) { e.preventDefault(); postNote(t.id.slice(3)); return; }
+  /* 한글 입력 중 Enter는 글자 확정과 겹쳐 무시되던 문제: 확정이 끝난 뒤 등록 */
+  if (t.id && t.id.startsWith("ci-") && e.key === "Enter" && !e.shiftKey) { e.preventDefault(); const tid = t.id.slice(3);
+    if (e.isComposing || e.keyCode === 229) { notePend = tid; setTimeout(() => { if (notePend === tid) { notePend = null; postNote(tid); } }, 60); } else postNote(tid); return; }
   if (e.key === "Escape" && $("#dlgHost").innerHTML) closeDlg();
 });
 document.addEventListener("change", e => {
@@ -9245,8 +9248,11 @@ function fakeDoc2(root){const D=document;const body=()=>root.querySelector(".app
   getElementById:id=>root.getElementById(id)||D.getElementById(id),
   querySelector:s=>root.querySelector(s),querySelectorAll:s=>root.querySelectorAll(s),
   createElement:(t,o)=>D.createElement(t,o),createElementNS:(a,b)=>D.createElementNS(a,b),createTextNode:t=>D.createTextNode(t),createDocumentFragment:()=>D.createDocumentFragment(),
-  addEventListener:(t,f,o)=>(t==="keydown"||t==="keyup"||t==="paste"?D:root).addEventListener(t,f,o),
-  removeEventListener:(t,f,o)=>(t==="keydown"||t==="keyup"||t==="paste"?D:root).removeEventListener(t,f,o),
+  /* 키보드 이벤트는 페이지 전체에서 받되, e.target은 화면 안쪽의 실제 칸으로 바꿔 줌 (그림자 영역 밖에서 받으면 target이 껍데기로 바뀌어 Enter 등록 등이 안 되던 문제) */
+  addEventListener:(t,f,o)=>{if(t==="keydown"||t==="keyup"||t==="paste"){const w=ev=>{const real=ev.composedPath?ev.composedPath()[0]:ev.target;
+      f(real===ev.target?ev:new Proxy(ev,{get:(x,k)=>k==="target"?real:(typeof x[k]==="function"?x[k].bind(x):x[k])}));};(f.__w=f.__w||new Map()).set(root,w);D.addEventListener(t,w,o);}
+    else root.addEventListener(t,f,o);},
+  removeEventListener:(t,f,o)=>{if(t==="keydown"||t==="keyup"||t==="paste"){const w=f.__w&&f.__w.get(root);if(w)D.removeEventListener(t,w,o);}else root.removeEventListener(t,f,o);},
   get activeElement(){return root.activeElement;},get body(){return body();},get head(){return D.head;},get documentElement(){return D.documentElement;},get defaultView(){return window;},
   execCommand:(...a)=>D.execCommand(...a)};}
 function mountMod(hostId,tplId){const host=$(hostId);const root=host.attachShadow({mode:"open"});root.appendChild($(tplId).content.cloneNode(true));syncTheme();return root;}
