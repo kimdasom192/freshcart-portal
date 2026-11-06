@@ -53,7 +53,7 @@ button,input,select{font:inherit;color:inherit}
 .pbrand{display:flex;align-items:center;gap:10px;text-decoration:none;color:var(--ink);min-width:0}
 .pbrand b{display:block;font-family:var(--f-disp);font-weight:800;font-size:17px;letter-spacing:-.01em;line-height:1.2}
 .pbrand small{display:block;color:var(--muted);font-size:11.5px}
-.pnav{order:3;flex:1 1 100%;display:flex;align-items:center;gap:2px;overflow-x:auto;scrollbar-width:none;margin-inline:-4px;padding-inline:4px}
+.pnav{order:3;flex:1 1 100%;display:flex;align-items:center;flex-wrap:wrap;gap:2px;margin-inline:-4px;padding-inline:4px;position:relative;z-index:40}
 .pnav::-webkit-scrollbar{display:none}
 @media (min-width:1060px){.pnav{order:0;flex:1 1 auto;margin:0}}
 .pnav a{flex:none;padding:7px 12px;border-radius:7px;color:var(--muted);text-decoration:none;font-size:13.5px;font-weight:500;white-space:nowrap}
@@ -161,6 +161,22 @@ button,input,select{font:inherit;color:inherit}
 .mcard .upd b{color:var(--forest);font-family:var(--f-num)}
 .ptbl .utitle{width:72px;padding:5px 7px;border:1px solid var(--line);border-radius:6px;background:var(--surface);font:inherit;font-size:13px;color:var(--ink)}
 .ureset{display:inline-flex;gap:4px;align-items:center;margin-left:4px;font-size:12px;color:var(--muted)}.ureset input{width:90px;padding:4px 6px;border:1px solid var(--line);border-radius:6px;font:inherit;font-size:13px}
+
+/* 대분류 · 중분류 메뉴 */
+.pnav .ng{position:relative;flex:none}
+.pnav .ngb{border:0;background:none;font:inherit;font-size:14px;font-weight:600;color:var(--muted);padding:7px 12px;border-radius:7px;cursor:pointer;display:inline-flex;gap:5px;align-items:center}
+.pnav .ngb i{font-style:normal;font-size:10px;opacity:.7}
+.pnav .ngb:hover,.pnav .ng:hover .ngb,.pnav .ng.open .ngb{color:var(--ink);background:var(--sunk)}
+.pnav .ng.on .ngb{background:var(--forest);color:var(--on-forest)}
+.pnav .ngm{display:none;position:absolute;top:100%;left:0;min-width:250px;padding:6px;margin-top:4px;background:var(--surface);border:1px solid var(--line);border-radius:10px;box-shadow:0 10px 28px rgba(0,0,0,.14);z-index:60}
+.pnav .ngm::before{content:"";position:absolute;left:0;right:0;top:-8px;height:8px}
+@media (hover:hover){.pnav .ng:hover .ngm{display:block}}
+.pnav .ng.open .ngm,.pnav .ng:focus-within .ngm{display:block}
+.pnav .ngm a{display:flex;flex-direction:column;gap:2px;padding:8px 10px;border-radius:7px;white-space:normal;color:var(--ink);font-size:14px}
+.pnav .ngm a small{font-size:11.5px;color:var(--muted);font-weight:400;line-height:1.4}
+.pnav .ngm a:hover{background:var(--sunk)}
+.pnav .ngm a[aria-current="page"]{background:var(--forest-soft);color:var(--forest)}.pnav .ngm a[aria-current="page"] small{color:var(--forest)}
+@media (max-width:640px){.pnav .ngm{position:fixed;left:16px;right:16px;top:auto;min-width:0}}
 
 .lock-fields{display:grid;grid-template-columns:auto minmax(0,1fr);gap:8px 12px;align-items:center}
 .lock-fields label{margin:0!important}
@@ -9328,22 +9344,22 @@ const LS={get(k){try{return localStorage.getItem(k);}catch(e){return null;}},set
 function toast(t){const el=document.createElement("div");el.className="ptoast";el.textContent=t;document.body.appendChild(el);setTimeout(()=>el.remove(),2600);}
 
 const PERMS=[
-  {k:"slow",g:"재고·마진",l:"부진재고"},
-  {k:"margin",g:"재고·마진",l:"거래처 마진율",ed:1},
-  {k:"uni",g:"재고·마진",l:"자료 한 번에 올리기",ed:1},
-  {k:"rep",g:"재고·마진",l:"월 매출 보고서",ed:1},
-  {k:"close.run",g:"마감",l:"업로드 만들기"},
-  {k:"close.cmp",g:"마감",l:"마감 비교"},
-  {k:"close.ss",g:"마감",l:"숙성도 발주"},
-  {k:"close.daily",g:"마감",l:"일일배송"},
-  {k:"close.map",g:"마감",l:"매핑표 관리"},
-  {k:"log",g:"업무",l:"주간 업무일지"},
-  {k:"check",g:"업무",l:"업무리스트 (체크리스트)"},
-  {k:"quote",g:"관리",l:"견적서"},
-  {k:"expiry",g:"관리",l:"소비기한 점검"},
-  {k:"cash",g:"관리",l:"시제 관리"}];
+  {k:"slow",g:"영업",l:"부진재고"},
+  {k:"margin",g:"영업",l:"거래처 마진율",ed:1},
+  {k:"uni",g:"영업",l:"자료 한 번에 올리기",ed:1},
+  {k:"rep",g:"영업",l:"월 매출 보고서",ed:1},
+  {k:"close.run",g:"SCM",l:"업로드 만들기"},
+  {k:"close.cmp",g:"SCM",l:"마감 비교"},
+  {k:"close.ss",g:"SCM",l:"숙성도 발주"},
+  {k:"close.daily",g:"SCM",l:"일일배송"},
+  {k:"close.map",g:"SCM",l:"매핑표 관리"},
+  {k:"log",g:"업무보조",l:"주간 업무일지"},
+  {k:"check",g:"업무보조",l:"업무리스트 (체크리스트)"},
+  {k:"quote",g:"업무보조",l:"견적서"},
+  {k:"expiry",g:"기타",l:"소비기한 점검"},
+  {k:"cash",g:"기타",l:"시제 관리"}];
 const ALL=PERMS.map(p=>p.k);
-const GROUPS=["재고·마진","마감","업무","관리"];
+const GROUPS=["영업","SCM","업무보조","기타"];
 const PRESETS=[
   {l:"전체 메뉴",keys:ALL},
   {l:"마감 담당",keys:["close.run","close.cmp","close.ss","close.daily","close.map","log","check"]},
@@ -9353,16 +9369,16 @@ const PRESETS=[
 const closeTabsOf=k=>[...k].filter(x=>x.startsWith("close.")).map(x=>x.slice(6));
 const VIEWS=[
   {v:"home",l:"홈",hash:"home"},
-  {v:"slow",l:"부진재고",hash:"slow",g:"재고·마진",need:k=>k.has("slow"),d:"20일 마감 기준 부진재고 판정, 출고 추이, 거래처 공유 현황"},
-  {v:"margin",l:"거래처 마진율",hash:"margin",g:"재고·마진",need:k=>k.has("margin"),d:"거래처·품목별 마진율, 지난달 비교와 적정 단가 제안"},
-  {v:"up",l:"자료 올리기",hash:"upload-all",g:"재고·마진",need:k=>k.has("uni"),d:"이카운트 판매·구매현황, 재고변동표, 고메 매장별 판매를 한 번에 반영"},
-  {v:"rep",l:"매출 보고서",hash:"sales-report",g:"재고·마진",need:k=>k.has("rep"),d:"업체별 마감금액(공급가·부가세·합계)과 계산서 발행, 품목 마진율"},
-  {v:"close",l:"마감 업로드",hash:"close",g:"마감",need:k=>closeTabsOf(k).length>0,d:"원본을 올리면 업체별 이카운트 업로드 파일, 마감 비교, 숙성도·일일배송"},
-  {v:"log",l:"업무일지",hash:"worklog",g:"업무",need:k=>k.has("log"),d:"주간 업무일지 작성·보고, 팀 공유"},
-  {v:"check",l:"업무리스트",hash:"checklist",g:"업무",need:k=>k.has("check"),d:"사람마다 따로 만들어 쓰는 체크리스트·할 일 (나만 보기)"},
-  {v:"quote",l:"견적서",hash:"quote",g:"관리",need:k=>k.has("quote"),d:"품목 정보를 넣으면 대표님 보고용과 거래처 전달용 견적서, 타겟가 비교까지"},
-  {v:"cash",l:"시제 관리",hash:"cash",g:"관리",need:k=>k.has("cash"),d:"시제(현금) 입금·출금 기록과 잔액 자동 계산, 월별 보기·엑셀"},
-  {v:"expiry",l:"소비기한 점검",hash:"expiry",g:"관리",need:k=>k.has("expiry"),d:"현재고와 입고 소비기한, 현장 수량을 비교해 재고 차이·선입선출·임박 품목 확인, 폐기 기록 (권한 있는 사람 함께 보기)"},
+  {v:"slow",l:"부진재고",hash:"slow",g:"영업",need:k=>k.has("slow"),d:"20일 마감 기준 부진재고 판정, 출고 추이, 거래처 공유 현황"},
+  {v:"margin",l:"거래처 마진율",hash:"margin",g:"영업",need:k=>k.has("margin"),d:"거래처·품목별 마진율, 지난달 비교와 적정 단가 제안"},
+  {v:"up",l:"자료 올리기",hash:"upload-all",g:"영업",need:k=>k.has("uni"),d:"이카운트 판매·구매현황, 재고변동표, 고메 매장별 판매를 한 번에 반영"},
+  {v:"rep",l:"매출 보고서",hash:"sales-report",g:"영업",need:k=>k.has("rep"),d:"업체별 마감금액(공급가·부가세·합계)과 계산서 발행, 품목 마진율"},
+  {v:"close",l:"SCM",hash:"close",g:"SCM",need:k=>closeTabsOf(k).length>0,d:"원본을 올리면 업체별 이카운트 업로드 파일, 마감 비교, 숙성도·일일배송"},
+  {v:"log",l:"업무일지",hash:"worklog",g:"업무보조",need:k=>k.has("log"),d:"주간 업무일지 작성·보고, 팀 공유"},
+  {v:"check",l:"업무리스트",hash:"checklist",g:"업무보조",need:k=>k.has("check"),d:"사람마다 따로 만들어 쓰는 체크리스트·할 일 (나만 보기)"},
+  {v:"quote",l:"견적서",hash:"quote",g:"업무보조",need:k=>k.has("quote"),d:"품목 정보를 넣으면 대표님 보고용과 거래처 전달용 견적서, 타겟가 비교까지"},
+  {v:"cash",l:"시제 관리",hash:"cash",g:"기타",need:k=>k.has("cash"),d:"시제(현금) 입금·출금 기록과 잔액 자동 계산, 월별 보기·엑셀"},
+  {v:"expiry",l:"소비기한 점검",hash:"expiry",g:"기타",need:k=>k.has("expiry"),d:"현재고와 입고 소비기한, 현장 수량을 비교해 재고 차이·선입선출·임박 품목 확인, 폐기 기록 (권한 있는 사람 함께 보기)"},
   {v:"users",l:"사용자·권한",hash:"people",owner:1,g:"관리"}];
 const MT=["margin","suggest","prices","changes","link","upload"];
 function hashToView(h){if(!h||h==="home")return "home";if(h==="slow")return "slow";if(MT.includes(h))return "margin";
@@ -9427,13 +9443,21 @@ window.addEventListener("hashchange",route);
 /* 업무일지 모듈 안에서 보일 화면: 주간 업무일지(log) · 업무리스트(check) 권한 따로 */
 function logAllow(){const k=keys();window.__logAllow={log:k.has("log"),me:k.has("check")&&!P.preview};}
 function renderNav(){
-  let h="",lastG=null;
-  for(const d of VIEWS){if(!allowed(d.v))continue;
-    const g=d.g||(d.owner?"관리":"");
-    if(d.v!=="home"&&g!==lastG){h+=`<span class="sep" aria-hidden="true"></span>`;lastG=g;}
-    h+=`<a href="#${d.hash}"${P.view===d.v?' aria-current="page"':""}>${esc(d.l)}</a>`;}
+  /* 대분류만 보이고, 마우스를 올리거나 누르면 중분류가 펼쳐짐 */
+  const ORDER=["영업","SCM","업무보조","기타","관리"];const gs=new Map();let h="";
+  for(const d of VIEWS){if(!allowed(d.v))continue;if(d.v==="home"){h+=`<a href="#home"${P.view==="home"?' aria-current="page"':""}>홈</a>`;continue;}
+    const g=d.g||(d.owner?"관리":"기타");if(!gs.has(g))gs.set(g,[]);gs.get(g).push(d);}
+  for(const g of ORDER){const L=gs.get(g);if(!L)continue;const on=L.some(d=>d.v===P.view);
+    if(L.length===1&&(g==="SCM"||g==="관리")){const d=L[0];h+=`<a href="#${d.hash}"${on?' aria-current="page"':""}>${esc(g==="관리"?d.l:g)}</a>`;continue;}
+    h+=`<div class="ng${on?" on":""}"><button type="button" class="ngb" aria-haspopup="true" aria-expanded="false">${esc(g)}<i aria-hidden="true">▾</i></button>
+      <div class="ngm" role="menu">${L.map(d=>`<a role="menuitem" href="#${d.hash}"${P.view===d.v?' aria-current="page"':""}><b>${esc(d.l)}</b>${d.d?`<small>${esc(d.d)}</small>`:""}</a>`).join("")}</div></div>`;}
   $("pNav").innerHTML=h;
-  const cur=$("pNav").querySelector("[aria-current]");if(cur&&cur.scrollIntoView)try{cur.scrollIntoView({block:"nearest",inline:"nearest"});}catch(e){}
+  $("pNav").querySelectorAll(".ngb").forEach(b=>b.onclick=e=>{e.stopPropagation();const g=b.parentElement,open=!g.classList.contains("open");
+    $("pNav").querySelectorAll(".ng.open").forEach(x=>{x.classList.remove("open");x.querySelector(".ngb").setAttribute("aria-expanded","false");});
+    if(open){g.classList.add("open");b.setAttribute("aria-expanded","true");}});
+  $("pNav").querySelectorAll(".ngm a").forEach(a=>a.addEventListener("click",()=>{const g=a.closest(".ng");if(g)g.classList.remove("open");}));
+  if(!window.__ngDoc){window.__ngDoc=1;document.addEventListener("click",e=>{if(!e.target.closest||!e.target.closest(".ng"))document.querySelectorAll("#pNav .ng.open").forEach(x=>x.classList.remove("open"));});
+    document.addEventListener("keydown",e=>{if(e.key==="Escape")document.querySelectorAll("#pNav .ng.open").forEach(x=>x.classList.remove("open"));});}
   $("pWho").innerHTML=`<b>${esc(P.name)}${P.title?" "+esc(P.title):""}님</b>${P.owner?`<span class="role">관리자</span>`:""}<button class="btn sm" type="button" id="pPw">비밀번호</button><button class="btn sm" type="button" id="pOut">로그아웃</button>`;
   $("pOut").onclick=()=>{FC.auth.signOut().then(()=>{location.hash="";location.reload();});};
   $("pPw").onclick=openPw;
