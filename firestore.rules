@@ -18,6 +18,12 @@ service cloud.firestore {
     function closeUser() { return hasAny(['close.run', 'close.cmp', 'close.ss', 'close.daily', 'close.map']); }
     function ownPid(pid) { return active() && me().pid == pid; }
 
+    // 로그인용 아이디 → 계정 주소 (비밀번호 초기화 뒤에도 같은 아이디로 로그인), 관리자만 바꿈
+    match /logins/{id} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
     // 사람과 메뉴 권한: 관리자만 바꿈
     match /users/{uid} {
       allow read: if isAdmin() || request.auth.uid == uid || active();

@@ -159,6 +159,8 @@ button,input,select{font:inherit;color:inherit}
 .hgo:hover{text-decoration:underline;text-underline-offset:3px}
 .mcard .upd{font-size:12px;color:var(--muted)}
 .mcard .upd b{color:var(--forest);font-family:var(--f-num)}
+.ptbl .utitle{width:72px;padding:5px 7px;border:1px solid var(--line);border-radius:6px;background:var(--surface);font:inherit;font-size:13px;color:var(--ink)}
+.ureset{display:inline-flex;gap:4px;align-items:center;margin-left:4px;font-size:12px;color:var(--muted)}.ureset input{width:90px;padding:4px 6px;border:1px solid var(--line);border-radius:6px;font:inherit;font-size:13px}
 
 .lock-fields{display:grid;grid-template-columns:auto minmax(0,1fr);gap:8px 12px;align-items:center}
 .lock-fields label{margin:0!important}
@@ -9432,7 +9434,7 @@ function renderNav(){
     h+=`<a href="#${d.hash}"${P.view===d.v?' aria-current="page"':""}>${esc(d.l)}</a>`;}
   $("pNav").innerHTML=h;
   const cur=$("pNav").querySelector("[aria-current]");if(cur&&cur.scrollIntoView)try{cur.scrollIntoView({block:"nearest",inline:"nearest"});}catch(e){}
-  $("pWho").innerHTML=`<b>${esc(P.name)}님</b>${P.owner?`<span class="role">관리자</span>`:""}<button class="btn sm" type="button" id="pPw">비밀번호</button><button class="btn sm" type="button" id="pOut">로그아웃</button>`;
+  $("pWho").innerHTML=`<b>${esc(P.name)}${P.title?" "+esc(P.title):""}님</b>${P.owner?`<span class="role">관리자</span>`:""}<button class="btn sm" type="button" id="pPw">비밀번호</button><button class="btn sm" type="button" id="pOut">로그아웃</button>`;
   $("pOut").onclick=()=>{FC.auth.signOut().then(()=>{location.hash="";location.reload();});};
   $("pPw").onclick=openPw;
   const pv=$("pPreview");
@@ -9507,7 +9509,9 @@ $("pLockForm").addEventListener("submit",async e=>{e.preventDefault();
   const id=$("pId").value.trim(),pw=$("pPass").value;
   if(!id||!pw){$("pErr").textContent="아이디와 비밀번호를 입력해 주세요.";return;}
   $("pGo").disabled=true;$("pErr").textContent="";
-  try{await FC.auth.signInWithEmailAndPassword(toEmail(id),pw);}
+  let email=toEmail(id);
+  if(!id.includes("@")){try{const L=await FC.fs.doc("logins/"+id.trim().toLowerCase()).get();if(L.exists&&L.data().email)email=L.data().email;}catch(e){}}
+  try{await FC.auth.signInWithEmailAndPassword(email,pw);}
   catch(er){const c=er&&er.code||"";
     $("pErr").textContent=c.includes("too-many")?"로그인 시도가 많아 잠시 막혔습니다. 몇 분 뒤 다시 해 주세요.":
       c.includes("network")?"인터넷 연결을 확인해 주세요.":
@@ -9520,7 +9524,7 @@ function enter(){$("pLock").hidden=true;$("hub").hidden=false;P.ready=true;route
 function pushClose(){const tabs=closeTabsOf(keys());if(window.__closeAccess&&tabs.length)window.__closeAccess(tabs,window.PORTAL.name);}
 function applyProfile(uid,d){
   FC.profile={uid,pid:d.pid||uid,name:d.name||"",role:d.role||"user",menus:d.menus||[]};
-  P.uid=uid;P.owner=d.role==="admin";P.name=d.name||"";P.loginId=d.loginId||"";
+  P.uid=uid;P.owner=d.role==="admin";P.name=d.name||"";P.title=d.title||"";P.loginId=d.loginId||"";
   P.keys=new Set(P.owner?ALL:(d.menus||[]).filter(x=>ALL.includes(x)));
 }
 let unsubMe=null,unsubUsers=null;
@@ -9563,41 +9567,58 @@ function openPw(){
 /* ---------- 사용자·권한 (관리자) ---------- */
 let LOGS=[];
 function loadUsers(){
-  unsubUsers=FC.fs.collection("users").onSnapshot(q=>{P.list=q.docs.map(d=>Object.assign({uid:d.id},d.data())).sort((a,b)=>(a.createdAt||0)-(b.createdAt||0));
+  unsubUsers=FC.fs.collection("users").onSnapshot(q=>{P.list=q.docs.map(d=>Object.assign({uid:d.id},d.data())).filter(x=>!x.movedTo).sort((a,b)=>(a.createdAt||0)-(b.createdAt||0));
     /* 업무리스트 권한이 따로 생기기 전부터 업무일지를 쓰던 사람은 업무리스트도 그대로 쓰게 한 번만 옮겨 줌 */
     for(const x of P.list){if(x.role!=="admin"&&!x.checkSet&&(x.menus||[]).includes("log")&&!(x.menus||[]).includes("check"))
       FC.fs.doc("users/"+x.uid).update({menus:[...x.menus,"check"],checkSet:true}).catch(()=>{});}
     if(P.view==="users")renderUsers();},()=>{});
   FC.db.collection("logs").get().then(q=>{LOGS=q.docs.map(d=>({id:d.id,name:(d.data()||{}).name||""}));if(P.view==="users")renderUsers();}).catch(()=>{});
 }
+let rs={uid:null,pw:""};
 function permBoxes(prefix,sel){return GROUPS.map(g=>`<fieldset><legend>${esc(g)}</legend>${PERMS.filter(p=>p.g===g).map(p=>
   `<label><input type="checkbox" id="${prefix}-${p.k.replace(".","-")}" value="${p.k}"${sel.has(p.k)?" checked":""}> ${esc(p.l)}</label>`).join("")}</fieldset>`).join("");}
-let draft={name:"",id:"",pw:"",link:"",keys:new Set(["log"])};
+let draft={name:"",title:"",id:"",pw:"",link:"",keys:new Set(["log"])};
 const newPw=()=>{const c="abcdefghjkmnpqrstuvwxyz23456789";let s="";const r=crypto.getRandomValues(new Uint8Array(8));for(const b of r)s+=c[b%c.length];return s;};
 async function createAccount(d){
   const sec=firebase.apps.find(a=>a.name==="creator")||firebase.initializeApp(FC.CFG,"creator");
   const cred=await sec.auth().createUserWithEmailAndPassword(toEmail(d.id),d.pw);
   const uid=cred.user.uid;
-  await FC.fs.doc("users/"+uid).set({name:d.name,loginId:d.id.toLowerCase(),role:"user",menus:d.menus,active:true,checkSet:true,pid:d.link||uid,createdAt:Date.now()});
+  await FC.fs.doc("users/"+uid).set({name:d.name,title:d.title||"",loginId:d.id.toLowerCase(),role:"user",menus:d.menus,active:true,checkSet:true,pid:d.link||uid,createdAt:Date.now()});
+  try{await FC.fs.doc("logins/"+d.id.toLowerCase()).set({email:toEmail(d.id),uid});}catch(e){}
+  await sec.auth().signOut();
+}
+/* 비밀번호 초기화: 관리자가 다른 사람 비밀번호를 직접 바꿀 수 없어서, 같은 아이디로 새 로그인 계정을 만들고 권한·업무일지 연결을 그대로 옮김 */
+async function resetAccount(x,pw){
+  const n=(x.resetN||0)+1,id=(x.loginId||"").toLowerCase();if(!id)throw new Error("no-id");
+  const email=`${id}+r${n}@${FC.DOMAIN}`;
+  const sec=firebase.apps.find(a=>a.name==="creator")||firebase.initializeApp(FC.CFG,"creator");
+  const cred=await sec.auth().createUserWithEmailAndPassword(email,pw);const nu=cred.user.uid;
+  try{await FC.fs.doc("logins/"+id).set({email,uid:nu});}catch(e){await sec.auth().signOut();throw e;}
+  const copy=Object.assign({},x);delete copy.uid;
+  await FC.fs.doc("users/"+nu).set(Object.assign(copy,{email,resetN:n,active:true,resetAt:Date.now()}));
+  await FC.fs.doc("users/"+x.uid).update({active:false,movedTo:nu});
   await sec.auth().signOut();
 }
 const saveUser=(uid,patch)=>FC.fs.doc("users/"+uid).update(patch).then(()=>toast("저장했습니다")).catch(()=>toast("저장하지 못했습니다. 잠시 뒤 다시 해 주세요"));
 function renderUsers(){
   const L=P.list;const used=new Set(L.map(x=>x.pid));
   const freeLogs=LOGS.filter(l=>!used.has(l.id));
-  const head=`<tr><th rowspan="2">이름</th><th rowspan="2">아이디</th>${GROUPS.map(g=>`<th class="gh" colspan="${PERMS.filter(p=>p.g===g).length}">${esc(g)}</th>`).join("")}<th rowspan="2" class="c bl">사용</th><th rowspan="2"></th></tr>
+  const head=`<tr><th rowspan="2">이름</th><th rowspan="2">직함</th><th rowspan="2">아이디</th>${GROUPS.map(g=>`<th class="gh" colspan="${PERMS.filter(p=>p.g===g).length}">${esc(g)}</th>`).join("")}<th rowspan="2" class="c bl">사용</th><th rowspan="2"></th></tr>
     <tr>${PERMS.map((p,i)=>`<th class="c${i===0||PERMS[i-1].g!==p.g?" bl":""}">${esc(p.l)}</th>`).join("")}</tr>`;
   const rows=L.map(x=>{const adm=x.role==="admin";return `<tr class="${x.active===false?"off":""}"><td class="nm"><b>${esc(x.name)}</b>${adm?' <span class="role">관리자</span>':""}</td>
+    <td><input type="text" class="utitle" data-title="${x.uid}" value="${esc(x.title||"")}" list="uTitles" placeholder="직함" aria-label="${esc(x.name)} 직함"></td>
     <td class="cd">${esc(x.loginId||"")}</td>
     ${PERMS.map((p,i)=>`<td class="c${i===0||PERMS[i-1].g!==p.g?" bl":""}"><input type="checkbox" data-perm="${x.uid}|${p.k}"${adm||(x.menus||[]).includes(p.k)?" checked":""}${adm?" disabled":""} aria-label="${esc(x.name)} ${esc(p.l)}"></td>`).join("")}
     <td class="c bl"><input type="checkbox" data-act="${x.uid}"${x.active!==false?" checked":""}${adm?" disabled":""} aria-label="${esc(x.name)} 사용"></td>
-    <td class="ac">${adm?"":`<button class="btn sm" type="button" data-pv="${x.uid}">이 사람 화면 보기</button>`}</td></tr>`;}).join("");
+    <td class="ac">${adm?`<span class="muted small">비밀번호는 위 '비밀번호' 버튼</span>`:`<button class="btn sm" type="button" data-pv="${x.uid}">이 사람 화면 보기</button>${rs.uid===x.uid?`<span class="ureset">새 비밀번호 <input type="text" id="uRsPw" value="${esc(rs.pw)}"><button class="btn sm primary" type="button" data-rsok="${x.uid}">초기화</button><button class="btn sm" type="button" data-rsno="1">취소</button></span>`:`<button class="btn sm" type="button" data-rs="${x.uid}">비밀번호 초기화</button>`}`}</td></tr>`;}).join("");
   $("pUsers").innerHTML=`<div class="page">
     <div class="page-h"><small>관리자 전용</small><h1>사용자·권한</h1>
       <p>아이디를 만들고 볼 수 있는 메뉴를 고릅니다. 체크하지 않은 메뉴의 자료는 서버에서 막혀서 화면을 고쳐도 열리지 않습니다. 메뉴를 바꾸면 그 사람 화면에 바로 반영됩니다.</p></div>
     <form class="panel2" id="uAdd" autocomplete="off"><h2>아이디 만들기</h2>
       <div class="addform">
-        <label class="f">이름<input type="text" id="uName" placeholder="예: 이연지 과장" value="${esc(draft.name)}"></label>
+        <label class="f">이름<input type="text" id="uName" placeholder="예: 이연지" value="${esc(draft.name)}"></label>
+        <label class="f">직함<input type="text" id="uTitle" placeholder="예: 과장" value="${esc(draft.title)}" list="uTitles"></label>
+        <datalist id="uTitles">${["사원","주임","대리","과장","차장","부장","팀장","실장","이사","대표"].map(t=>`<option value="${t}">`).join("")}</datalist>
         <label class="f">아이디 (영문·숫자)<input type="text" id="uId" placeholder="예: yeonji" value="${esc(draft.id)}" autocapitalize="off" spellcheck="false"></label>
         <label class="f">처음 비밀번호 (6자 이상)<span class="coderow"><input type="text" id="uPw" value="${esc(draft.pw)}"><button class="btn" type="button" id="uGen">만들기</button></span></label>
         <label class="f">기존 업무일지 기록 연결<select id="uLink" class="sel"><option value="">연결 안 함 (새로 시작)</option>${freeLogs.map(l=>`<option value="${esc(l.id)}"${draft.link===l.id?" selected":""}>${esc(l.name||l.id)}의 기록</option>`).join("")}</select></label>
@@ -9609,14 +9630,14 @@ function renderUsers(){
     <div class="panel2"><h2>등록된 사람 <span class="muted">${L.length}명</span></h2>
       ${L.length?`<div class="ptbl"><table>${head}${rows}</table></div>`:`<p class="pnote">불러오는 중입니다…</p>`}
     </div>
-    <p class="pnote">비밀번호를 잊은 사람은 '사용'을 끄고 새 아이디를 만들어 주세요. 기존 업무일지 기록은 새 아이디에 다시 연결할 수 있습니다.</p>
+    <p class="pnote">비밀번호를 잊은 사람은 <b>비밀번호 초기화</b>를 누르면 같은 아이디에 새 비밀번호가 정해집니다. 권한·업무일지 기록은 그대로 이어지고, 바뀐 비밀번호를 그 사람에게 전해 주면 됩니다. 각자 비밀번호는 로그인 후 오른쪽 위 <b>비밀번호</b> 버튼에서 바꿀 수 있습니다.</p>
     <div class="panel2"><h2>자료 가져오기</h2>
       <p class="muted" style="margin:0">처음 한 번, Claude가 준 <b>포털 자료 파일(.json)</b>을 올리면 부진재고·마진율·마감·업무일지 기록이 이 사이트로 옮겨집니다. 같은 파일을 다시 올리면 그 시점 자료로 덮어씁니다.</p>
       <div class="acts2"><input type="file" id="impFile" accept=".json,application/json"><button class="btn primary" type="button" id="impGo" disabled>가져오기</button></div>
       <p class="muted" id="impMsg" style="margin:0"></p>
     </div>
   </div>`;
-  const syncDraft=()=>{draft.name=$("uName").value;draft.id=$("uId").value;draft.pw=$("uPw").value;draft.link=$("uLink").value;draft.keys=new Set([...$("uPerms").querySelectorAll("input:checked")].map(i=>i.value));};
+  const syncDraft=()=>{draft.title=$("uTitle").value;draft.name=$("uName").value;draft.id=$("uId").value;draft.pw=$("uPw").value;draft.link=$("uLink").value;draft.keys=new Set([...$("uPerms").querySelectorAll("input:checked")].map(i=>i.value));};
   $("uGen").onclick=()=>{syncDraft();draft.pw=newPw();renderUsers();};
   $("pUsers").querySelectorAll("[data-preset]").forEach(b=>b.onclick=()=>{syncDraft();draft.keys=new Set(PRESETS[+b.dataset.preset].keys);renderUsers();});
   $("uLink").onchange=()=>{syncDraft();if(draft.link&&!draft.name){const l=LOGS.find(x=>x.id===draft.link);if(l&&l.name){draft.name=l.name;renderUsers();}}};
@@ -9628,7 +9649,7 @@ function renderUsers(){
     if(P.list.some(x=>(x.loginId||"")===id.toLowerCase())){toast("이미 있는 아이디입니다");return;}
     if(!menus.length){toast("볼 수 있는 메뉴를 하나 이상 골라 주세요");return;}
     $("uSubmit").disabled=true;
-    try{await createAccount({name,id,pw,menus,link:draft.link});toast(`${name}님 아이디를 만들었습니다 · ${id} / ${pw}`);draft={name:"",id:"",pw:"",link:"",keys:new Set(["log"])};renderUsers();}
+    try{await createAccount({name,title:draft.title.trim(),id,pw,menus,link:draft.link});toast(`${name}님 아이디를 만들었습니다 · ${id} / ${pw}`);draft={name:"",title:"",id:"",pw:"",link:"",keys:new Set(["log"])};renderUsers();}
     catch(er){const c=String(er&&er.code||"");toast(c.includes("email-already")?"이미 있는 아이디입니다":c.includes("weak-password")?"비밀번호가 너무 쉽습니다":"아이디를 만들지 못했습니다");$("uSubmit").disabled=false;}};
   const box=$("pUsers"),find=uid=>P.list.find(x=>x.uid===uid);
   box.querySelectorAll("[data-perm]").forEach(c=>c.onchange=()=>{const [uid,k]=c.dataset.perm.split("|");const x=find(uid);
@@ -9637,6 +9658,13 @@ function renderUsers(){
     saveUser(uid,{menus});});
   box.querySelectorAll("[data-act]").forEach(c=>c.onchange=()=>saveUser(c.dataset.act,{active:c.checked}));
   box.querySelectorAll("[data-pv]").forEach(b=>b.onclick=()=>setPreview(find(b.dataset.pv)));
+  box.querySelectorAll("[data-title]").forEach(el=>el.addEventListener("change",()=>{const x=find(el.dataset.title);if(!x||(x.title||"")===el.value.trim())return;saveUser(x.uid,{title:el.value.trim()});}));
+  box.querySelectorAll("[data-rs]").forEach(b=>b.onclick=()=>{rs={uid:b.dataset.rs,pw:newPw()};renderUsers();});
+  box.querySelectorAll("[data-rsno]").forEach(b=>b.onclick=()=>{rs={uid:null,pw:""};renderUsers();});
+  box.querySelectorAll("[data-rsok]").forEach(b=>b.onclick=async()=>{const x=find(b.dataset.rsok);const pw=$("uRsPw").value.trim();
+    if(pw.length<6){toast("새 비밀번호는 6자 이상이어야 합니다");return;}b.disabled=true;
+    try{await resetAccount(x,pw);rs={uid:null,pw:""};toast(`${x.name}님 비밀번호를 초기화했습니다 · ${x.loginId} / ${pw}`);}
+    catch(e){console.error(e);b.disabled=false;toast("초기화하지 못했습니다. 보안 규칙(logins)을 확인해 주세요");}});
   $("impFile").onchange=()=>{$("impGo").disabled=!$("impFile").files.length;};
   $("impGo").onclick=()=>importData($("impFile").files[0]);
 }
