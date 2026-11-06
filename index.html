@@ -4809,7 +4809,9 @@ span.ck{cursor:default}
     const m = {};
     const merged = {};
     for (const k of ['saengmacha', 'taeto', 'macho', 'hanok_dan', 'hanok_van', 'smartfood', 'tuna']) {
-      const rows = (base[k] || []).map(r => Object.assign({}, r));
+      // 원본 매핑표에 같은 원본코드가 두 번 들어 있는 줄(같은 자사코드)은 하나만 씀 — 수정하면 둘 다 바뀌게
+      const rows = [], seen = new Set();
+      for (const r of (base[k] || [])) { if (r.src && seen.has(r.src)) continue; seen.add(r.src); rows.push(Object.assign({}, r)); }
       const idx = new Map();
       rows.forEach((r, i) => { if (!idx.has(r.src)) idx.set(r.src, i); });
       for (const e of (edits || [])) {
