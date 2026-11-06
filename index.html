@@ -355,6 +355,26 @@ button,input,select{font:inherit;color:inherit}
 .xdform input[type=date],.xdform select{font:inherit;padding:4px 6px;border:1px solid var(--line);border-radius:6px;background:var(--surface);color:var(--ink)}
 .xdsum{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 10px}.xdsum>span{border:1px solid var(--line);background:var(--surface);border-radius:8px;padding:5px 10px;font-size:13px}
 .xdadd{margin-top:14px}.xdadd h2{margin:0 0 8px}.xdadd select{font:inherit;padding:7px 8px;border:1px solid var(--line);border-radius:8px;background:var(--surface);color:var(--ink)}
+/* 시제 관리 */
+.cspage .muted{color:var(--muted)}.cspage .small{font-size:12px}.cspage .sp{flex:1}
+.cssum{display:flex;flex-wrap:wrap;gap:8px;margin:0 0 14px}.cssum>div{flex:1 1 150px}.cssum>.big{flex:2 1 280px}
+.cssum>div{border:1px solid var(--line);border-radius:10px;padding:12px 14px;background:var(--surface);display:flex;flex-direction:column;gap:2px}
+.cssum span{font-size:12px;color:var(--muted)}.cssum b{font-size:22px;font-family:var(--f-num)}.cssum i{font-style:normal;font-size:12px;color:var(--muted)}
+.cssum .big{background:var(--forest);border-color:var(--forest);color:var(--on-forest)}.cssum .big span,.cssum .big i{color:inherit;opacity:.85}.cssum .big b{font-size:30px}.cssum .big small{font-size:15px;margin-left:3px}
+.cssum b.in,.cstbl td.in{color:var(--forest)}.cssum b.out,.cstbl td.out{color:var(--bad)}
+.csadd h2{margin:0 0 8px}
+.csform{display:grid;grid-template-columns:150px minmax(180px,2fr) 120px auto minmax(140px,1.4fr) auto;gap:10px;align-items:end}
+.csform .f{display:flex;flex-direction:column;gap:5px;font-size:12px;font-weight:600;color:var(--muted)}
+.csform input{padding:9px 11px;border:1px solid var(--line);border-radius:8px;background:var(--surface);font-size:14px;color:var(--ink);min-width:0}
+.csform input:focus{border-color:var(--forest);outline:none}
+.cskind button{padding:8px 12px}
+.cskind button[data-kind="in"][aria-pressed="true"]{background:var(--forest);color:var(--on-forest)}
+.cskind button[data-kind="out"][aria-pressed="true"]{background:var(--bad);color:#fff}
+@media (max-width:900px){.csform{grid-template-columns:1fr 1fr}.csform .csw{grid-column:1/-1}.cssum>.big{flex-basis:100%}}
+.csbar{margin:16px 0 8px;align-items:center}
+.cspill{font-size:11.5px;font-weight:700;padding:1px 9px;border-radius:999px}.cspill.in{background:var(--forest-soft);color:var(--forest)}.cspill.out{background:var(--bad-soft);color:var(--bad)}
+.cstbl td{vertical-align:middle}.csact{white-space:nowrap}.cstbl .x{border:0;background:none;color:var(--muted);font-size:18px;cursor:pointer}.cstbl .x:hover{color:var(--bad)}
+.csedit input,.csedit select{font:inherit;font-size:13px;padding:5px 6px;border:1px solid var(--line);border-radius:6px;background:var(--surface);color:var(--ink)}
 
 /* 통합 메뉴 띠 */
 .hub{background:var(--sunk);border-bottom:1px solid var(--line)}
@@ -503,6 +523,7 @@ details.card[open]>summary h2::before{content:"▾ "}
 <section class="gut" id="pUsers" hidden></section>
 <section class="gut" id="pQuote" hidden></section>
 <section class="gut" id="pExpiry" hidden></section>
+<section class="gut" id="pCash" hidden></section>
 
 <div id="hostSlow" hidden></div>
 <div id="hostMargin" hidden></div>
@@ -8634,6 +8655,110 @@ async function xlsx(q){if(!window.ExcelJS){toast("엑셀 도구를 불러오지 
 window.RQUOTE={reindex(){R.idx=null;render();},show(el){if(!el)return;if(!$("rqMain"))shell(el);init();render();renderList();},flush};
 })();
 </script>
+<script>(function(){
+"use strict";
+/* ===== 시제 관리: 권한 있는 사람이 함께 쓰는 시제(현금) 입출금 장부 pettyCash/<id> ===== */
+const $=id=>document.getElementById(id);
+const esc=s=>String(s==null?"":s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+function toast(t){const el=document.createElement("div");el.className="ptoast";el.textContent=t;document.body.appendChild(el);setTimeout(()=>el.remove(),2600);}
+const today=()=>new Intl.DateTimeFormat("en-CA",{timeZone:"Asia/Seoul"}).format(new Date());
+const won=n=>(n<0?"−":"")+Math.abs(Math.round(n||0)).toLocaleString("ko-KR");
+const num=v=>{const n=+String(v==null?"":v).replace(/[,\s원₩]/g,"");return isFinite(n)?n:NaN;};
+const db=()=>window.FC&&window.FC.db, me=()=>(window.FC&&window.FC.profile)||{};
+const col=()=>db().collection("pettyCash");
+const C={on:false,list:[],mon:"all",q:"",edit:null,del:null,f:{date:today(),desc:"",amt:"",kind:"out",memo:""},ok:false,err:false};
+
+function sorted(){return C.list.slice().sort((a,b)=>(a.date||"").localeCompare(b.date||"")||(a.at||0)-(b.at||0));}
+function withBal(){let bal=0;return sorted().map(r=>{bal+=(r.kind==="in"?1:-1)*(+r.amt||0);return Object.assign({},r,{bal});});}
+function init(){if(C.on)return;C.on=true;
+  try{col().onSnapshot(s=>{C.ok=true;C.err=false;C.list=s.docs.map(d=>Object.assign({id:d.id},d.data()));render();},()=>{C.err=true;render();});}catch(e){C.err=true;}}
+async function add(){const f=C.f;const a=num(f.amt);
+  if(!f.date){toast("날짜를 넣어 주세요");return;}if(!f.desc.trim()){toast("사용내역을 넣어 주세요");$("csDesc")&&$("csDesc").focus();return;}
+  if(!(a>0)){toast("금액을 숫자로 넣어 주세요");$("csAmt")&&$("csAmt").focus();return;}
+  const rec={date:f.date,desc:f.desc.trim(),amt:a,kind:f.kind==="in"?"in":"out",memo:(f.memo||"").trim(),by:me().name||"",uid:me().uid||"",at:Date.now()};
+  try{await col().doc().set(rec);}catch(e){toast(e&&(e.code==="not_granted"||e.code==="permission-denied")?"저장 권한이 없습니다. 보안 규칙(pettyCash)을 확인해 주세요":"저장하지 못했습니다");return;}
+  C.f={date:f.date,desc:"",amt:"",kind:f.kind,memo:""};toast(`${rec.desc} ${won(a)}원 ${rec.kind==="in"?"입금":"출금"} 기록`);render();setTimeout(()=>{const d=$("csDesc");if(d)d.focus();},30);}
+async function saveEdit(id){const r=C.list.find(x=>x.id===id);if(!r)return;const g=k=>$(`cse-${k}`);
+  const a=num(g("amt").value);if(!(a>0)){toast("금액을 숫자로 넣어 주세요");return;}
+  const up=Object.assign({},r,{date:g("date").value||r.date,desc:g("desc").value.trim()||r.desc,amt:a,kind:g("kind").value,memo:g("memo").value.trim(),editedBy:me().name||"",editedAt:Date.now()});delete up.id;
+  try{await col().doc(id).set(up);C.edit=null;toast("고쳤습니다");}catch(e){toast("고치지 못했습니다");}}
+async function del(id){try{await col().doc(id).delete();C.del=null;toast("기록을 지웠습니다");}catch(e){toast("지우지 못했습니다");}}
+
+function render(){const root=$("pCash");if(!root||root.hidden&&!C.on)return;
+  const act=document.activeElement&&document.activeElement.id;
+  const all=withBal();const bal=all.length?all[all.length-1].bal:0;
+  const mons=[...new Set(all.map(r=>(r.date||"").slice(0,7)).filter(Boolean))].sort().reverse();
+  if(C.mon!=="all"&&!mons.includes(C.mon))C.mon="all";
+  const k=C.q.replace(/\s/g,"").toLowerCase();
+  const rows=all.filter(r=>(C.mon==="all"||(r.date||"").slice(0,7)===C.mon)&&(!k||(r.desc+r.memo+r.by).replace(/\s/g,"").toLowerCase().includes(k)));
+  const sumIn=rows.filter(r=>r.kind==="in").reduce((a,r)=>a+r.amt,0),sumOut=rows.filter(r=>r.kind!=="in").reduce((a,r)=>a+r.amt,0);
+  const monStart=C.mon==="all"?0:(()=>{const p=all.filter(r=>(r.date||"").slice(0,7)<C.mon);return p.length?p[p.length-1].bal:0;})();
+  const f=C.f;
+  root.innerHTML=`<div class="page cspage">
+    <div class="page-h"><small>권한 있는 사람이 함께 쓰는 장부</small><h1>시제 관리</h1><p>시제(현금) 입금·출금을 기록하면 잔액이 자동으로 계산됩니다.</p></div>
+    ${C.err?`<div class="note warn">시제 기록을 불러오지 못했습니다. 보안 규칙에 시제 관리(pettyCash) 규칙이 있는지 확인해 주세요.</div>`:""}
+    <div class="cssum"><div class="big"><span>현재 시제 잔액</span><b>${won(bal)}<small>원</small></b><i>${all.length?`${esc(all[all.length-1].date)} 기준 · 기록 ${all.length}건`:"기록 없음"}</i></div>
+      <div><span>${C.mon==="all"?"전체 기간":esc(+C.mon.slice(0,4)+"년 "+(+C.mon.slice(5))+"월")} 입금</span><b class="in">+${won(sumIn)}</b></div>
+      <div><span>${C.mon==="all"?"전체 기간":"이 달"} 출금</span><b class="out">−${won(sumOut)}</b></div>
+      ${C.mon!=="all"?`<div><span>이 달 시작 잔액</span><b>${won(monStart)}</b></div>`:""}</div>
+    <form class="panel2 csadd" id="csAdd" autocomplete="off"><h2>기록 추가</h2>
+      <div class="csform">
+        <label class="f">날짜<input type="date" id="csDate" value="${esc(f.date)}"></label>
+        <label class="f csw">사용내역<input type="text" id="csDesc" value="${esc(f.desc)}" placeholder="예: 식대초과분, 퀵 발송비" list="csDescs"></label>
+        <datalist id="csDescs">${[...new Set(all.map(r=>r.desc))].slice(-60).map(d=>`<option value="${esc(d)}">`).join("")}</datalist>
+        <label class="f">금액<input type="text" id="csAmt" value="${esc(f.amt)}" inputmode="numeric" placeholder="0" class="num r"></label>
+        <div class="f"><span>입금/출금</span><div class="seg2 cskind" role="group" aria-label="입금 출금"><button type="button" data-kind="in" aria-pressed="${f.kind==="in"}">입금 +</button><button type="button" data-kind="out" aria-pressed="${f.kind!=="in"}">출금 −</button></div></div>
+        <label class="f csw">비고 (선택)<input type="text" id="csMemo" value="${esc(f.memo)}" placeholder="영수증 번호, 청구처 등"></label>
+        <button class="btn primary" type="submit">기록</button>
+      </div>
+      <p class="muted small" style="margin:6px 0 0">${num(f.amt)>0?`기록하면 잔액이 <b>${won(bal)}원 → ${won(bal+(f.kind==="in"?1:-1)*num(f.amt))}원</b>이 됩니다. (오늘 이후 날짜 기록 기준)`:"Enter를 누르면 바로 기록됩니다."}</p></form>
+    <div class="acts2 csbar"><h2 class="xtt">시제 장부 <span class="muted">${rows.length}건</span></h2><span class="sp"></span>
+      <input type="search" id="csQ" class="sel" placeholder="사용내역 찾기" value="${esc(C.q)}" style="width:180px">
+      <select id="csMon" class="sel" aria-label="달"><option value="all"${C.mon==="all"?" selected":""}>전체 기간</option>${mons.map(m=>`<option value="${m}"${m===C.mon?" selected":""}>${+m.slice(0,4)}년 ${+m.slice(5)}월</option>`).join("")}</select>
+      <button class="btn" type="button" id="csXlsx"${rows.length?"":" disabled"}>엑셀 받기</button></div>
+    <div class="ptbl cstbl"><table><thead><tr><th>날짜</th><th>사용내역</th><th class="r">금액</th><th>입금/출금</th><th class="r">잔액</th><th>비고</th><th>기록</th><th></th></tr></thead><tbody>
+      ${rows.length?rows.slice().reverse().map(r=>C.edit===r.id?editRow(r):`<tr>
+        <td class="num">${esc(r.date)}</td><td><b>${esc(r.desc)}</b></td><td class="r num ${r.kind==="in"?"in":"out"}">${r.kind==="in"?"+":"−"}${won(r.amt)}</td>
+        <td><span class="cspill ${r.kind==="in"?"in":"out"}">${r.kind==="in"?"입금":"출금"}</span></td><td class="r num"><b>${won(r.bal)}</b></td>
+        <td class="small">${esc(r.memo||"")}</td><td class="small muted">${esc(r.by||"")}</td>
+        <td class="csact"><button type="button" class="btn sm" data-edit="${esc(r.id)}">고치기</button>${C.del===r.id?`<button type="button" class="btn sm danger" data-delok="${esc(r.id)}">삭제?</button>`:`<button type="button" class="x" data-del="${esc(r.id)}" aria-label="기록 삭제">×</button>`}</td></tr>`).join("")
+        :`<tr><td colspan="8" class="hempty">${C.ok?"기록이 없습니다.":"불러오는 중입니다…"}</td></tr>`}</tbody></table></div>
+    <p class="muted small">잔액은 날짜 순서대로 입금은 더하고 출금은 빼서 계산합니다. 같은 날 기록은 입력한 순서대로 계산합니다.</p>
+  </div>`;
+  bind();if(act){const el=$(act);if(el){el.focus();try{if(el.type==="text"||el.type==="search")el.setSelectionRange(el.value.length,el.value.length);}catch(e){}}}}
+function editRow(r){return `<tr class="csedit"><td><input type="date" id="cse-date" value="${esc(r.date)}"></td><td><input type="text" id="cse-desc" value="${esc(r.desc)}" class="xin" style="width:100%"></td>
+  <td class="r"><input type="text" id="cse-amt" value="${esc(r.amt)}" class="xin r num" style="width:90px" inputmode="numeric"></td>
+  <td><select id="cse-kind"><option value="in"${r.kind==="in"?" selected":""}>입금</option><option value="out"${r.kind!=="in"?" selected":""}>출금</option></select></td><td class="r num muted">${won(r.bal)}</td>
+  <td><input type="text" id="cse-memo" value="${esc(r.memo||"")}" class="xin" style="width:100%"></td><td></td>
+  <td class="csact"><button type="button" class="btn sm primary" data-esave="${esc(r.id)}">저장</button><button type="button" class="btn sm" data-ecancel="1">취소</button></td></tr>`;}
+function bind(){const root=$("pCash");
+  const keep=(id,k)=>{const el=$(id);if(el)el.addEventListener("input",()=>{C.f[k]=el.value;if(k==="amt"){const p=root.querySelector(".csadd p");if(p){const a=num(el.value);const bal=(withBal().slice(-1)[0]||{bal:0}).bal;p.innerHTML=a>0?`기록하면 잔액이 <b>${won(bal)}원 → ${won(bal+(C.f.kind==="in"?1:-1)*a)}원</b>이 됩니다. (오늘 이후 날짜 기록 기준)`:"Enter를 누르면 바로 기록됩니다.";}}});};
+  keep("csDate","date");keep("csDesc","desc");keep("csAmt","amt");keep("csMemo","memo");
+  $("csAdd").onsubmit=e=>{e.preventDefault();add();};
+  root.querySelectorAll("[data-kind]").forEach(b=>b.onclick=()=>{C.f.kind=b.dataset.kind;render();});
+  $("csMon").onchange=e=>{C.mon=e.target.value;render();};
+  $("csQ").oninput=e=>{C.q=e.target.value;render();};
+  root.querySelectorAll("[data-edit]").forEach(b=>b.onclick=()=>{C.edit=b.dataset.edit;C.del=null;render();});
+  root.querySelectorAll("[data-ecancel]").forEach(b=>b.onclick=()=>{C.edit=null;render();});
+  root.querySelectorAll("[data-esave]").forEach(b=>b.onclick=()=>saveEdit(b.dataset.esave));
+  root.querySelectorAll("[data-del]").forEach(b=>b.onclick=()=>{C.del=b.dataset.del;render();setTimeout(()=>{if(C.del===b.dataset.del){C.del=null;render();}},3000);});
+  root.querySelectorAll("[data-delok]").forEach(b=>b.onclick=()=>del(b.dataset.delok));
+  const x=$("csXlsx");if(x)x.onclick=()=>xlsx().catch(()=>toast("엑셀을 만들지 못했습니다"));}
+async function xlsx(){if(!window.ExcelJS){toast("엑셀 도구를 불러오지 못했습니다");return;}
+  const all=withBal();const rows=all.filter(r=>C.mon==="all"||(r.date||"").slice(0,7)===C.mon);
+  const wb=new ExcelJS.Workbook();const ws=wb.addWorksheet("시제 장부",{pageSetup:{paperSize:9,orientation:"portrait",fitToPage:true,fitToWidth:1,fitToHeight:0}});
+  const thin={style:"thin",color:{argb:"FF8C8C8C"}},box={top:thin,left:thin,bottom:thin,right:thin},font={name:"맑은 고딕",size:10};
+  const H=[["날짜",12],["사용내역",30],["금액",12],["입금/출금",10],["잔액",13],["비고",24],["기록",10]];
+  ws.mergeCells(1,1,1,H.length);ws.getCell(1,1).value=`시제 장부 · ${C.mon==="all"?"전체 기간":(+C.mon.slice(0,4))+"년 "+(+C.mon.slice(5))+"월"}`;ws.getCell(1,1).font={name:"맑은 고딕",size:14,bold:true};
+  ws.getCell(2,1).value=`현재 잔액 ${won(all.length?all[all.length-1].bal:0)}원 · 출력 ${today()}`;ws.getCell(2,1).font={name:"맑은 고딕",size:9,color:{argb:"FF555555"}};
+  H.forEach((h,i)=>{ws.getColumn(i+1).width=h[1];const c=ws.getCell(4,i+1);c.value=h[0];c.font=Object.assign({},font,{bold:true});c.fill={type:"pattern",pattern:"solid",fgColor:{argb:"FFF2F2F2"}};c.border=box;c.alignment={horizontal:"center"};});
+  rows.forEach((r,i)=>[r.date,r.desc,(r.kind==="in"?1:-1)*r.amt,r.kind==="in"?"입금":"출금",r.bal,r.memo||"",r.by||""].forEach((v,j)=>{const c=ws.getCell(5+i,j+1);c.value=v;c.font=Object.assign({},font);c.border=box;if(j===2||j===4){c.numFmt="#,##0;[Red]-#,##0";c.alignment={horizontal:"right"};}if(j===3)c.alignment={horizontal:"center"};}));
+  const t=5+rows.length;ws.getCell(t,2).value="합계";ws.getCell(t,2).font=Object.assign({},font,{bold:true});
+  ws.getCell(t,3).value={formula:`SUM(C5:C${t-1})`};ws.getCell(t,3).numFmt="#,##0;[Red]-#,##0";ws.getCell(t,3).font=Object.assign({},font,{bold:true});
+  const buf=await wb.xlsx.writeBuffer();const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([buf]));a.download=`시제장부_${C.mon==="all"?"전체":C.mon.replace("-","")}_${today().replace(/-/g,"")}.xlsx`;document.body.appendChild(a);a.click();setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove();},4000);}
+window.CASH={show(){init();render();}};
+})();
+</script>
 <script>/* ===== 소비기한 점검 계산 (엑셀 '소비기한 점검표'와 같은 규칙) — 브라우저/Node 공용 ===== */
 (function(root){
 "use strict";
@@ -9213,7 +9338,8 @@ const PERMS=[
   {k:"log",g:"업무",l:"주간 업무일지"},
   {k:"check",g:"업무",l:"업무리스트 (체크리스트)"},
   {k:"quote",g:"관리",l:"견적서"},
-  {k:"expiry",g:"관리",l:"소비기한 점검"}];
+  {k:"expiry",g:"관리",l:"소비기한 점검"},
+  {k:"cash",g:"관리",l:"시제 관리"}];
 const ALL=PERMS.map(p=>p.k);
 const GROUPS=["재고·마진","마감","업무","관리"];
 const PRESETS=[
@@ -9233,11 +9359,12 @@ const VIEWS=[
   {v:"log",l:"업무일지",hash:"worklog",g:"업무",need:k=>k.has("log"),d:"주간 업무일지 작성·보고, 팀 공유"},
   {v:"check",l:"업무리스트",hash:"checklist",g:"업무",need:k=>k.has("check"),d:"사람마다 따로 만들어 쓰는 체크리스트·할 일 (나만 보기)"},
   {v:"quote",l:"견적서",hash:"quote",g:"관리",need:k=>k.has("quote"),d:"품목 정보를 넣으면 대표님 보고용과 거래처 전달용 견적서, 타겟가 비교까지"},
+  {v:"cash",l:"시제 관리",hash:"cash",g:"관리",need:k=>k.has("cash"),d:"시제(현금) 입금·출금 기록과 잔액 자동 계산, 월별 보기·엑셀"},
   {v:"expiry",l:"소비기한 점검",hash:"expiry",g:"관리",need:k=>k.has("expiry"),d:"현재고와 입고 소비기한, 현장 수량을 비교해 재고 차이·선입선출·임박 품목 확인, 폐기 기록 (권한 있는 사람 함께 보기)"},
   {v:"users",l:"사용자·권한",hash:"people",owner:1,g:"관리"}];
 const MT=["margin","suggest","prices","changes","link","upload"];
 function hashToView(h){if(!h||h==="home")return "home";if(h==="slow")return "slow";if(MT.includes(h))return "margin";
-  if(h==="upload-all")return "up";if(h==="sales-report")return "rep";if(h==="close")return "close";if(h==="worklog")return "log";if(h==="checklist")return "check";if(h==="people")return "users";if(h==="quote")return "quote";if(h==="expiry")return "expiry";return "home";}
+  if(h==="upload-all")return "up";if(h==="sales-report")return "rep";if(h==="close")return "close";if(h==="worklog")return "log";if(h==="checklist")return "check";if(h==="cash")return "cash";if(h==="people")return "users";if(h==="quote")return "quote";if(h==="expiry")return "expiry";return "home";}
 
 const P={db:null,user:null,owner:false,canEdit:null,uid:null,name:"",keys:new Set(),hash:"",preview:null,list:[],ready:false,view:"home",delAsk:null};
 const keys=()=>P.preview?P.preview.keys:P.keys;
@@ -9276,15 +9403,16 @@ function ensure(v){
 }
 
 /* ---------- 화면 전환 ---------- */
-const SHOW={pHome:"home",hostSlow:"slow",hostMargin:"margin",uni:"up",rep:"rep",hostClose:"close",hostLog:"log",pUsers:"users",pQuote:"quote",pExpiry:"expiry"};
+const SHOW={pHome:"home",hostSlow:"slow",hostMargin:"margin",uni:"up",rep:"rep",hostClose:"close",hostLog:"log",pUsers:"users",pQuote:"quote",pExpiry:"expiry",pCash:"cash"};
 function allowed(v){const d=VIEWS.find(x=>x.v===v);if(!d)return false;if(d.owner)return P.owner&&!P.preview;return !d.need||d.need(keys());}
 function route(){
   if(!P.ready)return;
   let v=hashToView(location.hash.slice(1));if(!allowed(v))v="home";
   P.view=v;
   for(const id in SHOW)$(id).hidden=!(SHOW[id]===v||(id==="hostLog"&&v==="check"));
-  if(v!=="home"&&v!=="users"&&v!=="quote"&&v!=="expiry")ensure(v);
+  if(v!=="home"&&v!=="users"&&v!=="quote"&&v!=="expiry"&&v!=="cash")ensure(v);
   if(v==="expiry"&&window.EXPIRY)window.EXPIRY.show();
+  if(v==="cash"&&window.CASH)window.CASH.show();
   if(v==="log"||v==="check"){logAllow();if(window.__logView)window.__logView(v==="check"?"me":"log");}
   if(v==="quote"&&window.QUOTE)window.QUOTE.show();
   if(v==="up")window.INV.renderUni();
