@@ -53,7 +53,7 @@ button,input,select{font:inherit;color:inherit}
 .pbrand{display:flex;align-items:center;gap:10px;text-decoration:none;color:var(--ink);min-width:0}
 .pbrand b{display:block;font-family:var(--f-disp);font-weight:800;font-size:17px;letter-spacing:-.01em;line-height:1.2}
 .pbrand small{display:block;color:var(--muted);font-size:11.5px}
-.pnav{order:3;flex:1 1 100%;display:flex;align-items:center;flex-wrap:wrap;gap:2px;margin-inline:-4px;padding-inline:4px;position:relative;z-index:40}
+.pnav{order:3;flex:1 1 100%;display:flex;align-items:center;gap:2px;overflow-x:auto;scrollbar-width:none;margin-inline:-4px;padding-inline:4px}
 .pnav::-webkit-scrollbar{display:none}
 @media (min-width:1060px){.pnav{order:0;flex:1 1 auto;margin:0}}
 .pnav a{flex:none;padding:7px 12px;border-radius:7px;color:var(--muted);text-decoration:none;font-size:13.5px;font-weight:500;white-space:nowrap}
@@ -9701,21 +9701,14 @@ window.addEventListener("hashchange",route);
 /* 업무일지 모듈 안에서 보일 화면: 주간 업무일지(log) · 업무리스트(check) 권한 따로 */
 function logAllow(){const k=keys();window.__logAllow={log:k.has("log"),me:k.has("check")&&!P.preview};}
 function renderNav(){
-  /* 대분류만 보이고, 마우스를 올리거나 누르면 중분류가 펼쳐짐 */
+  /* 메뉴를 한 줄로 모두 보여 주고, 영업 · SCM · 업무보조 · 기타 · 관리 사이에 구분선 */
   const ORDER=["영업","SCM","업무보조","기타","관리"];const gs=new Map();let h="";
   for(const d of VIEWS){if(!allowed(d.v))continue;if(d.v==="home"){h+=`<a href="#home"${P.view==="home"?' aria-current="page"':""}>홈</a>`;continue;}
     const g=d.g||(d.owner?"관리":"기타");if(!gs.has(g))gs.set(g,[]);gs.get(g).push(d);}
-  for(const g of ORDER){const L=gs.get(g);if(!L)continue;const on=L.some(d=>d.v===P.view);
-    if(L.length===1&&(g==="SCM"||g==="관리")){const d=L[0];h+=`<a href="#${d.hash}"${on?' aria-current="page"':""}>${esc(g==="관리"?d.l:g)}</a>`;continue;}
-    h+=`<div class="ng${on?" on":""}"><button type="button" class="ngb" aria-haspopup="true" aria-expanded="false">${esc(g)}<i aria-hidden="true">▾</i></button>
-      <div class="ngm" role="menu">${L.map(d=>`<a role="menuitem" href="#${d.hash}"${P.view===d.v?' aria-current="page"':""}><b>${esc(d.l)}</b>${d.d?`<small>${esc(d.d)}</small>`:""}</a>`).join("")}</div></div>`;}
+  for(const g of ORDER){const L=gs.get(g);if(!L)continue;h+=`<span class="sep" aria-hidden="true"></span>`;
+    for(const d of L)h+=`<a href="#${d.hash}"${P.view===d.v?' aria-current="page"':""}>${esc(d.l)}</a>`;}
   $("pNav").innerHTML=h;
-  $("pNav").querySelectorAll(".ngb").forEach(b=>b.onclick=e=>{e.stopPropagation();const g=b.parentElement,open=!g.classList.contains("open");
-    $("pNav").querySelectorAll(".ng.open").forEach(x=>{x.classList.remove("open");x.querySelector(".ngb").setAttribute("aria-expanded","false");});
-    if(open){g.classList.add("open");b.setAttribute("aria-expanded","true");}});
-  $("pNav").querySelectorAll(".ngm a").forEach(a=>a.addEventListener("click",()=>{const g=a.closest(".ng");if(g)g.classList.remove("open");}));
-  if(!window.__ngDoc){window.__ngDoc=1;document.addEventListener("click",e=>{if(!e.target.closest||!e.target.closest(".ng"))document.querySelectorAll("#pNav .ng.open").forEach(x=>x.classList.remove("open"));});
-    document.addEventListener("keydown",e=>{if(e.key==="Escape")document.querySelectorAll("#pNav .ng.open").forEach(x=>x.classList.remove("open"));});}
+  const cur=$("pNav").querySelector("[aria-current]");if(cur&&cur.scrollIntoView)try{cur.scrollIntoView({block:"nearest",inline:"nearest"});}catch(e){}
   $("pWho").innerHTML=`<b>${esc(P.name)}${P.title?" "+esc(P.title):""}님</b>${P.owner?`<span class="role">관리자</span>`:""}<button class="btn sm" type="button" id="pPw">비밀번호</button><button class="btn sm" type="button" id="pOut">로그아웃</button>`;
   $("pOut").onclick=()=>{FC.auth.signOut().then(()=>{location.hash="";location.reload();});};
   $("pPw").onclick=openPw;
