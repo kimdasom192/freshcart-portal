@@ -52,7 +52,7 @@ service cloud.firestore {
       allow write: if isAdmin();
     }
     match /cmpSlots/{d} { allow read, write: if closeUser(); }
-    match /mapEdits/{d} { allow read, write: if closeUser(); }
+    match /mapEdits/{d} { allow read, write: if closeUser() || hasAny(['item']); }
     match /daily/{d} { allow read, write: if closeUser(); }
     match /sukseong/{d} { allow read, write: if closeUser(); }
     match /dailyDays/{rest=**} { allow read, write: if closeUser(); }
@@ -75,6 +75,14 @@ service cloud.firestore {
     match /quotes/{d} { allow read, write: if hasAny(['quote']); }
     // 받은 견적: 견적서 권한이 있는 사람끼리 함께 저장·검색
     match /rquotes/{d} { allow read, write: if hasAny(['quote']); }
+
+    // 품목관리: 로그인한 사람은 모두 읽고(SCM 매핑에서 품목 불러오기), 품목관리 권한이 있는 사람이 고침
+    match /itemMaster/{d} {
+      allow read: if active() || isAdmin();
+      allow write: if hasAny(['item']);
+    }
+    // 품목코드 변경 기록: 관리자만
+    match /codeChanges/{d} { allow read, write: if isAdmin(); }
 
     // 시제 관리: 시제 관리 권한이 있는 사람끼리 함께 기록
     match /pettyCash/{d} { allow read, write: if hasAny(['cash']); }
