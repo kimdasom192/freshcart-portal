@@ -442,6 +442,10 @@ button,input,select{font:inherit;color:inherit}
 .odnote{margin-top:12px}.odnote textarea{resize:vertical;font-weight:400}
 .odrtbl th small{font-weight:500;color:var(--muted)}
 @media (max-width:900px){.odform{grid-template-columns:1fr 1fr}.odform .odw{grid-column:1/-1}}
+.oddrop{flex:1 1 360px;display:flex;flex-wrap:wrap;gap:8px 12px;align-items:center;border:2px dashed var(--line);border-radius:10px;padding:10px 12px;transition:border-color .15s,background .15s}
+.oddrop.over{border-color:var(--forest);background:var(--forest-soft)}
+.odcur{flex-basis:100%;display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding-top:10px;border-top:1px solid var(--line)}
+.odcur .odday{font-size:12px}
 
 /* 통합 메뉴 띠 */
 .hub{background:var(--sunk);border-bottom:1px solid var(--line)}
@@ -9082,6 +9086,8 @@ const $=id=>document.getElementById(id);
 const esc=s=>String(s==null?"":s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 function toast(t){const el=document.createElement("div");el.className="ptoast";el.textContent=t;document.body.appendChild(el);setTimeout(()=>el.remove(),2600);}
 const today=()=>new Intl.DateTimeFormat("en-CA",{timeZone:"Asia/Seoul"}).format(new Date());
+const addDay=(s,n)=>{const d=new Date(s+"T00:00:00Z");d.setUTCDate(d.getUTCDate()+n);return d.toISOString().slice(0,10);};
+const tomorrow=()=>addDay(today(),1);
 const db=()=>window.FC&&window.FC.db, me=()=>(window.FC&&window.FC.profile)||{};
 const norm=s=>String(s==null?"":s).replace(/\s+/g,"");
 const WD="일월화수목금토";
@@ -9125,13 +9131,13 @@ function parse(buf){
 /* ---------- 저장소 ---------- */
 function init(){if(O.on)return;O.on=true;
   try{db().collection("orderLog").onSnapshot(s=>{O.ok=true;O.err=false;const L={};s.docs.forEach(d=>{const x=d.data();if(x&&x.day)L[x.day]=x;});O.logs=L;
-      if(!O.touched){const ds=Object.keys(L).sort();O.day=ds.length?ds[ds.length-1]:today();}render();},()=>{O.err=true;render();});
+      if(!O.touched)O.day=tomorrow();render();},()=>{O.err=true;render();});
     db().collection("orderDay").onSnapshot(s=>{const D={};s.docs.forEach(d=>{const x=d.data();if(x&&x.day)D[x.day]=x;});O.days=D;render();},()=>{});}
   catch(e){O.err=true;}}
 const deny=e=>e&&(e.code==="not_granted"||e.code==="permission-denied");
 async function upload(file){if(!file||O.busy)return;O.busy=true;render();
   try{const buf=new Uint8Array(await file.arrayBuffer());const rows=parse(buf);
-    const day=dayFromName(file.name)||O.day||today();O.day=day;O.touched=true;
+    const day=O.day||tomorrow();O.touched=true;O.act=null;
     const old=O.logs[day];
     const rec={day,file:file.name,by:me().name||"",uid:me().uid||"",at:Date.now(),count:rows.length,pick:rows.filter(r=>isPick(r.s)).length,rows};
     O.logs[day]=rec;O.tab=O.tab==="rec"?"pick":O.tab;
@@ -9139,6 +9145,17 @@ async function upload(file){if(!file||O.busy)return;O.busy=true;render();
     toast(`${kday(day)} 발주완료 ${rec.count}건 기록${old?" (같은 날 기록을 새 파일로 바꿈)":""}`);}
   catch(e){toast(deny(e)?"저장 권한이 없습니다. 보안 규칙(orderLog)을 확인해 주세요":(e&&e.message)||"파일을 읽지 못했어요");}
   O.busy=false;render();}
+async function moveDay(to){const from=O.day;if(!to||to===from)return;const log=O.logs[from];if(!log)return;
+  const dd=O.days[from],td=O.days[to];
+  try{const nl=Object.assign({},log,{day:to,movedFrom:from,by:me().name||"",at:Date.now()});await db().collection("orderLog").doc(to).set(nl);O.logs[to]=nl;
+    if(dd){const nd=Object.assign({day:to,extras:[],note:""},td||{});nd.extras=(td&&td.extras||[]).concat(dd.extras||[]);nd.note=[td&&td.note,dd.note].filter(Boolean).join("\n");nd.by=me().name||"";nd.at=Date.now();
+      await db().collection("orderDay").doc(to).set(nd);O.days[to]=nd;await db().collection("orderDay").doc(from).delete();delete O.days[from];}
+    await db().collection("orderLog").doc(from).delete();delete O.logs[from];
+    O.day=to;O.touched=true;O.act=null;toast(`${kday(from)} 기록을 ${kday(to)}로 옮겼어요`);}
+  catch(e){toast(deny(e)?"권한이 없습니다":"옮기지 못했습니다");}render();}
+async function delDay(){const day=O.day;
+  try{await db().collection("orderLog").doc(day).delete();delete O.logs[day];if(O.days[day]){await db().collection("orderDay").doc(day).delete();delete O.days[day];}
+    O.act=null;toast(`${kday(day)} 기록을 지웠어요`);}catch(e){toast(deny(e)?"권한이 없습니다":"지우지 못했습니다");}render();}
 async function saveDay(fn){const day=O.day;const cur=Object.assign({day,extras:[],note:""},O.days[day]||{});const next=fn(JSON.parse(JSON.stringify(cur)));
   next.by=me().name||"";next.at=Date.now();O.days[day]=next;render();
   try{await db().collection("orderDay").doc(day).set(next);}catch(e){toast(deny(e)?"저장 권한이 없습니다. 보안 규칙(orderDay)을 확인해 주세요":"저장하지 못했습니다");}}
@@ -9230,17 +9247,22 @@ function recHtml(){const days=Object.keys(O.logs).sort().reverse();
         ${ds.flatMap(d=>(O.days[d].extras||[]).map(x=>`<tr><td class="num">${esc(md(d))}</td><td>${esc(x.v)}</td><td>${esc(x.n)}</td><td class="r num">${esc(qfmt(numOr(x.q)))}</td><td class="c">${esc(x.u)}</td><td class="c num">${esc(md(x.e))}</td><td class="small">${esc(x.m||"")}</td><td class="small muted">${esc(x.by||"")}</td></tr>`)).join("")}</tbody></table></div>`;})()}`;}
 function render(){const root=$("pOrder");if(!root||root.hidden&&!O.on)return;
   const act=document.activeElement&&document.activeElement.id;
-  if(!O.day)O.day=today();
+  if(!O.day)O.day=tomorrow();
   const log=O.logs[O.day];const days=Object.keys(O.logs).sort().reverse();
   const nPick=listFor("pick").all.length,nAll=listFor("all").all.length;
   root.innerHTML=`<div class="page odpage">
     <div class="page-h"><small>SCM · 권한 있는 사람이 함께 보기</small><h1>발주완료</h1><p>수급운영TOOL 엑셀을 올리면 발주여부가 ‘완료’인 품목만 입고예정일 순으로 정리합니다. 픽업 품목은 이미지로 복사해 바로 공유하고, 그날 기록이 남습니다.</p></div>
     ${O.err?`<div class="note warn">기록을 불러오지 못했습니다. 보안 규칙에 발주완료(orderLog·orderDay) 규칙이 있는지 확인해 주세요.</div>`:""}
     <div class="panel2 odtop">
-      <button class="btn primary" type="button" id="odPick"${O.busy?" disabled":""}>${O.busy?"읽는 중…":"수급표 엑셀 올리기"}</button><input type="file" id="odFile" accept=".xlsx,.xlsm,.xls" hidden>
-      <label class="odday">기준일 <input type="date" id="odDay" value="${esc(O.day)}"></label>
+      <label class="odday">기준일 <input type="date" id="odDay" value="${esc(O.day)}">${O.day===tomorrow()?'<span class="odtag">내일</span>':O.day===today()?'<span class="odtag g">오늘</span>':""}</label>
       ${days.length?`<select id="odDays" class="sel" aria-label="기록된 날"><option value="">기록된 날 보기</option>${days.slice(0,60).map(d=>`<option value="${d}"${d===O.day?" selected":""}>${esc(kday(d))} · ${O.logs[d].count}건</option>`).join("")}</select>`:""}
-      <span class="muted small odst">${log?`${esc(log.file||"")} · ${esc(log.by||"")} 올림 · 완료 ${log.count}건 · 픽업 ${log.pick}건`:"이 날 올린 수급표 없음 · 파일 이름의 날짜(예: 1110)로 기준일이 자동으로 잡힙니다"}</span>
+      <div class="oddrop${O.drag?" over":""}" id="odDrop">
+        <button class="btn primary" type="button" id="odPick"${O.busy?" disabled":""}>${O.busy?"읽는 중…":log?"다른 파일로 다시 올리기":"수급표 엑셀 올리기"}</button><input type="file" id="odFile" accept=".xlsx,.xlsm,.xls" hidden>
+        <span class="muted small">또는 파일을 여기로 끌어다 놓으세요 · <b>${esc(kday(O.day))}</b> 기준으로 기록${log?"됩니다 (지금 기록을 새 파일로 바꿈)":"됩니다"}</span></div>
+      ${log?`<div class="odcur"><span class="small">📄 <b>${esc(log.file||"")}</b> · ${esc(log.by||"")} 올림 · 완료 ${log.count}건 · 픽업 ${log.pick}건${log.movedFrom?` · ${esc(md(log.movedFrom))}에서 옮김`:""}</span><span class="sp"></span>
+        ${O.act==="move"?`<label class="odday">옮길 날짜 <input type="date" id="odMoveTo" value="${esc(O.moveTo||addDay(O.day,1))}"></label>${O.logs[O.moveTo||addDay(O.day,1)]?'<span class="small" style="color:var(--bad)">그 날에도 기록이 있어 덮어씁니다</span>':""}<button class="btn sm primary" type="button" id="odMoveOk">옮기기</button><button class="btn sm" type="button" id="odCancel">취소</button>`
+         :O.act==="del"?`<span class="small" style="color:var(--bad)">이 날 기록${((O.days[O.day]||{}).extras||[]).length?"과 추가 기재를":"을"} 지울까요?</span><button class="btn sm danger" type="button" id="odDelOk">삭제</button><button class="btn sm" type="button" id="odCancel">취소</button>`
+         :`<button class="btn sm" type="button" id="odMove">날짜 바꾸기</button><button class="btn sm" type="button" id="odDel">기록 삭제</button>`}</div>`:""}
     </div>
     <div class="odtabs" role="tablist">${[["pick",`픽업 목록 <b>${nPick}</b>`],["all",`발주완료 전체 <b>${nAll}</b>`],["rec","기록"]].map(([k,l])=>`<button type="button" role="tab" data-otab="${k}" aria-selected="${O.tab===k}">${l}</button>`).join("")}</div>
     ${O.tab==="rec"?recHtml():`
@@ -9253,9 +9275,16 @@ function render(){const root=$("pOrder");if(!root||root.hidden&&!O.on)return;
   bind();if(act){const el=$(act);if(el&&el.tagName!=="BUTTON"){el.focus();try{if(el.type==="text"||el.type==="search"||el.tagName==="TEXTAREA")el.setSelectionRange(el.value.length,el.value.length);}catch(e){}}}}
 function bind(){const root=$("pOrder");
   $("odPick").onclick=()=>$("odFile").click();
+  const dz=$("odDrop");if(dz){["dragover","dragenter"].forEach(ev=>dz.addEventListener(ev,e=>{e.preventDefault();dz.classList.add("over");}));
+    ["dragleave","drop"].forEach(ev=>dz.addEventListener(ev,e=>{e.preventDefault();dz.classList.remove("over");}));
+    dz.addEventListener("drop",e=>{const f=e.dataTransfer&&e.dataTransfer.files[0];if(f)upload(f);});}
+  const on=(id,f)=>{const el=$(id);if(el)el.onclick=f;};
+  on("odMove",()=>{O.act="move";O.moveTo=addDay(O.day,1);render();});on("odDel",()=>{O.act="del";render();});on("odCancel",()=>{O.act=null;render();});
+  const mt=$("odMoveTo");if(mt)mt.onchange=e=>{O.moveTo=e.target.value;render();};
+  on("odMoveOk",()=>moveDay(O.moveTo));on("odDelOk",()=>delDay());
   $("odFile").onchange=e=>{const f=e.target.files[0];e.target.value="";upload(f);};
-  $("odDay").onchange=e=>{if(e.target.value){O.day=e.target.value;O.touched=true;render();}};
-  const ds=$("odDays");if(ds)ds.onchange=e=>{if(e.target.value){O.day=e.target.value;O.touched=true;render();}};
+  $("odDay").onchange=e=>{if(e.target.value){O.day=e.target.value;O.touched=true;O.act=null;render();}};
+  const ds=$("odDays");if(ds)ds.onchange=e=>{if(e.target.value){O.day=e.target.value;O.touched=true;O.act=null;render();}};
   root.querySelectorAll("[data-otab]").forEach(b=>b.onclick=()=>{O.tab=b.dataset.otab;render();});
   const inc=$("odInc");if(inc)inc.onchange=e=>{O.inc=e.target.checked;render();};
   const cp=$("odCopy");if(cp)cp.onclick=()=>copyImage(O.tab);
