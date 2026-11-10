@@ -96,6 +96,10 @@ service cloud.firestore {
       allow update, delete: if isAdmin() || (hasAny(['expiry']) && resource.data.uid == request.auth.uid);
     }
 
+    // 발주완료: 수급표에서 뽑은 날짜별 기록과 추가 기재 — 발주완료 권한이 있는 사람 모두 함께
+    match /orderLog/{d} { allow read, write: if hasAny(['order']); }
+    match /orderDay/{d} { allow read, write: if hasAny(['order']); }
+
     // 나만 보는 자료 (업무리스트·체크리스트)
     match /data/users/{pid}/{rest=**} { allow read, write: if ownPid(pid); }
   }
