@@ -100,6 +100,10 @@ service cloud.firestore {
     match /orderLog/{d} { allow read, write: if hasAny(['order']); }
     match /orderDay/{d} { allow read, write: if hasAny(['order']); }
 
+    // 업무 일정: 일정 권한이 있는 사람 모두 함께 보고 기록
+    match /schedule/{d} { allow read, write: if hasAny(['cal']); }
+    match /scheduleMeta/{d} { allow read, write: if hasAny(['cal']); }
+
     // 나만 보는 자료 (업무리스트·체크리스트)
     match /data/users/{pid}/{rest=**} { allow read, write: if ownPid(pid); }
   }
