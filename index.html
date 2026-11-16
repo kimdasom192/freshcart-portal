@@ -8328,7 +8328,7 @@ function autoQty(spec){const s=String(spec||"").replace(/\s+/g,"").toLowerCase()
   if(last)return last;
   const m2=s.match(/(\d+)(입|ea|개|pk|팩|봉|병|캔|구|매|ps|pcs|p)(?![a-z])/);return m2?+m2[1]:null;}
 const unorm=u=>{u=String(u||"").trim().toLowerCase();return /^(bx|box|박스|bo|cs|case|케이스)$/.test(u)?"bx":/^(ea|개|낱개|pc|pcs)$/.test(u)?"ea":u;};
-function calc(it){const p=num(it.price);const base=p==null?null:(it.vat==="포함"?p/1.1:p);
+function calc(it){const p=num(it.price);const base=p==null?null:(it.vat==="포함"&&it.tax!=="면세"?p/1.1:p);/* 면세는 VAT 포함·별도 단가가 같음 */
   const diff=!!(it.bunit||"").trim()&&unorm(it.bunit)!==unorm(it.unit);const aq=autoQty(it.spec);const qty=diff?(num(it.qty)!=null?num(it.qty):aq):null;
   const conv=qty!=null&&qty>0&&qty!==1;const cost=base==null?null:diff?(conv?base/qty:null):base;const sale=num(it.sale),target=num(it.target),nego=num(it.nego);
   const mg=v=>cost!=null&&v?(v-cost)/v:null;const final=nego!=null?nego:sale;
@@ -8490,13 +8490,16 @@ function renderItems(){
         else{it[k]=isNum?inp.value.replace(/[^\d.\-]/g,""):inp.value;
           if(k==="sale"){it.saleBy="sale";syncRate();}
           if(["spec","bunit","unit"].includes(k)&&!num(it.qty)){const el=sec.querySelector('[data-k="qty"]');if(el){const a=autoQty(it.spec);const d=!!(it.bunit||"").trim()&&unorm(it.bunit)!==unorm(it.unit);el.placeholder=d?(a!=null?"규격에서 "+a:"직접 입력"):"단위 같으면 비움";}}
-          else if(["price","vat","qty","bunit","unit","spec"].includes(k)){if(it.saleBy==="rate"&&num(it.rate)!=null)syncSale();else syncRate();}}
+          else if(["price","vat","tax","qty","bunit","unit","spec"].includes(k)){if(it.saleBy==="rate"&&num(it.rate)!=null)syncSale();else syncRate();}}
         save();
         const c=calc(it);const box=sec.querySelector(".qcalc");box.outerHTML=calcHtml(c);
         if(k==="name")sec.querySelector(".qitem-h b").textContent=it.name||"제품명 미입력",sec.classList.toggle("empty",!named(it));});
       if(isNum)inp.addEventListener("blur",()=>{const n=num(inp.value);inp.value=n==null?"":n.toLocaleString("ko-KR");});
       if(k==="store"||k==="requester")inp.addEventListener("change",()=>renderItems());});
-    sec.querySelectorAll("[data-inc]").forEach(c=>c.onchange=()=>{it[c.dataset.inc]=c.checked;save();});
+    sec.querySelectorAll("[data-inc]").forEach(c=>c.onchange=()=>{it[c.dataset.inc]=c.checked;
+      /* 보고용·거래처용 둘 다 빼면 맨 아래로 */
+      if(it.inReport===false&&it.inClient===false){const j=q.items.indexOf(it);if(j>=0&&j<q.items.length-1){q.items.splice(j,1);q.items.push(it);save();renderItems();toast("보고용·거래처용 모두 빠진 품목을 맨 아래로 옮겼어요");return;}}
+      save();});
     sec.querySelector(".qdet").addEventListener("toggle",e=>{e.target.open?Q.openDetail.add(it.id):Q.openDetail.delete(it.id);});
     sec.querySelector("[data-mv='-1']").onclick=()=>{if(i>0){[q.items[i-1],q.items[i]]=[q.items[i],q.items[i-1]];save();renderItems();}};
     sec.querySelector("[data-mv='1']").onclick=()=>{if(i<q.items.length-1){[q.items[i+1],q.items[i]]=[q.items[i],q.items[i+1]];save();renderItems();}};
