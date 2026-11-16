@@ -9230,11 +9230,11 @@ function parse(buf){
   if(hr<0)throw new Error("‘발주여부’, ‘업체명’ 제목이 있는 시트를 찾지 못했어요. 수급운영TOOL 파일이 맞는지 확인해 주세요.");
   ["업체명","품목명","예정발주수량","단위","입고예정일"].forEach(n=>{if(cols[n]===undefined)throw new Error(`‘${n}’ 열을 찾지 못했어요.`);});
   const find=re=>{for(const k in cols)if(re.test(k))return cols[k];return undefined;};
-  const C={c:cols["품목코드"],st:cols["전산재고"],av:cols["가용재고"],d1:find(/^가용일수.*전월/),d2:find(/^가용일수.*당월/),d3:find(/^가용일수.*평균/)};
+  const C={c:cols["품목코드"],sp:cols["규격정보"]!==undefined?cols["규격정보"]:cols["규격"],st:cols["전산재고"],av:cols["가용재고"],d1:find(/^가용일수.*전월/),d2:find(/^가용일수.*당월/),d3:find(/^가용일수.*평균/)};
   const out=[];
   for(let i=hr+1;i<rows.length;i++){const row=rows[i]||[];const s=norm(row[cols["발주여부"]]);if(s.indexOf("완료")!==0)continue;
     const raw=row[cols["입고예정일"]];const g=k=>C[k]===undefined?null:numOr(row[C[k]]);
-    out.push({c:C.c===undefined||row[C.c]==null?"":String(row[C.c]).trim(),n:row[cols["품목명"]]==null?"":String(row[cols["품목명"]]).trim(),
+    out.push({c:C.c===undefined||row[C.c]==null?"":String(row[C.c]).trim(),sp:C.sp===undefined||row[C.sp]==null?"":String(row[C.sp]).trim(),n:row[cols["품목명"]]==null?"":String(row[cols["품목명"]]).trim(),
       v:norm(row[cols["업체명"]])?String(row[cols["업체명"]]).trim():"(업체명 없음)",q:numOr(row[cols["예정발주수량"]]),
       u:row[cols["단위"]]==null?"":String(row[cols["단위"]]).trim(),e:serial(raw)||(raw==null?"":String(raw).trim()),s,
       st:g("st"),av:g("av"),d1:g("d1"),d2:g("d2"),d3:g("d3")});}
@@ -9276,7 +9276,7 @@ async function saveDay(fn){const day=O.day;const cur=Object.assign({day,extras:[
 function listFor(kind){const log=O.logs[O.day];const dd=O.days[O.day]||{};
   let base=(log&&log.rows||[]).map((r,i)=>Object.assign({},r,{idx:i}));
   if(kind==="pick")base=base.filter(r=>isPick(r.s));else if(!O.inc)base=base.filter(r=>norm(r.s)==="완료");
-  const ex=(dd.extras||[]).filter(x=>kind!=="pick"||x.pick).map((x,i)=>({x:1,id:x.id,v:x.v||"(업체명 없음)",n:x.n||"",q:numOr(x.q),u:x.u||"",e:x.e||"",m:x.m||"",idx:10000+i}));
+  const ex=(dd.extras||[]).filter(x=>kind!=="pick"||x.pick).map((x,i)=>({x:1,id:x.id,v:x.v||"(업체명 없음)",n:x.n||"",q:numOr(x.q),u:x.u||"",e:x.e||"",m:x.m||"",s:x.pick?"완료(픽업)":"추가 기재",idx:10000+i}));
   const all=base.concat(ex);const order={};all.forEach(r=>{if(order[r.v]===undefined)order[r.v]=Object.keys(order).length;});
   const dk=r=>/^\d{4}-\d{2}-\d{2}$/.test(r.e)?r.e:"9999"+r.e;
   all.sort((a,b)=>dk(a).localeCompare(dk(b))||order[a.v]-order[b.v]||a.idx-b.idx);
@@ -9286,33 +9286,33 @@ function listFor(kind){const log=O.logs[O.day];const dd=O.days[O.day]||{};
 /* ---------- 이미지 ---------- */
 const FONT='"Malgun Gothic","맑은 고딕","Apple SD Gothic Neo","Noto Sans KR",sans-serif';
 function drawImage(kind){const L=listFor(kind);const dd=O.days[O.day]||{};const note=(dd.note||"").trim();
-  const S=2,pad=24,rh=34,hh=38,fs=15;
+  const S=2,pad=16,rh=30,hh=44,fs=14;
   const cv=document.createElement("canvas");const cx=cv.getContext("2d");
-  const cols=[["업체명","v","c"],["품목명","n","l"],["수량","q","r"],["단위","u","c"],["입고예정일","e","c"]];if(L.memo)cols.push(["비고","m","l"]);
-  const txt=(r,k)=>k==="q"?qfmt(r.q):k==="e"?(md(r.e)||"미정"):String(r[k]||"");
-  cx.font=`${fs}px ${FONT}`;
-  const W=cols.map(([h,k])=>{cx.font=`bold ${fs}px ${FONT}`;let w=cx.measureText(h).width;cx.font=`${k==="v"?"bold ":""}${fs}px ${FONT}`;L.all.forEach(r=>{w=Math.max(w,cx.measureText(txt(r,k)).width);});return Math.ceil(Math.min(w,k==="n"?520:k==="m"?360:260))+24;});
+  const PINK="#f4cccc",RED="#e03131",LINE="#3a3a3a";
+  const kd=e=>{const m=/^\d{4}-(\d{2})-(\d{2})$/.exec(e||"");return m?`${+m[1]}월 ${+m[2]}일`:(e||"미정");};
+  /* [제목, 값, 정렬, 최대폭, 제목칸 강조] */
+  const cols=[["업체명",r=>r.v,"c",200],["품목코드",r=>r.c||"","c",110],["품목명",r=>r.n,"l",460],["규격정보",r=>r.sp||"","c",200],["단위",r=>r.u,"c",70],
+    ["예정발주\n수량",r=>qfmt(r.q),"r",100,1],["입고예정일",r=>kd(r.e),"c",120,1],["발주여부",r=>r.x&&!r.s?"추가 기재":(r.s||""),"c",130,1]];
+  if(L.memo)cols.push(["비고",r=>r.m||"","l",300]);
+  const W=cols.map(([h,f,,mx])=>{cx.font=`bold ${fs}px ${FONT}`;let w=Math.max(...h.split("\n").map(t=>cx.measureText(t).width));cx.font=`${fs}px ${FONT}`;
+    L.all.forEach(r=>{w=Math.max(w,cx.measureText(String(f(r))).width);});return Math.ceil(Math.min(w,mx))+22;});
   const tw=W.reduce((a,b)=>a+b,0);
-  const title=`${kday(O.day)} ${kind==="pick"?"픽업 목록":"발주완료 목록"}`;const sub=`업체 ${new Set(L.all.map(r=>r.v)).size}곳 · 품목 ${L.all.length}건`;
   const noteLines=note?note.split(/\n/):[];
-  const H=pad+30+8+20+14+hh+Math.max(1,L.all.length)*rh+(noteLines.length?16+noteLines.length*22:0)+pad;const Wd=Math.max(tw,420)+pad*2;
+  const H=pad+hh+Math.max(1,L.all.length)*rh+(noteLines.length?14+noteLines.length*22:0)+pad;const Wd=tw+pad*2;
   cv.width=Wd*S;cv.height=H*S;cx.scale(S,S);
-  cx.fillStyle="#fff";cx.fillRect(0,0,Wd,H);
-  cx.fillStyle="#1d2330";cx.textBaseline="middle";cx.font=`bold 21px ${FONT}`;cx.textAlign="left";cx.fillText(title,pad,pad+15);
-  cx.font=`13px ${FONT}`;cx.fillStyle="#667085";cx.fillText(sub,pad,pad+30+8+10);
-  let y=pad+30+8+20+14;const x0=pad;
-  const clip=(s,w)=>{if(cx.measureText(s).width<=w)return s;while(s.length&&cx.measureText(s+"…").width>w)s=s.slice(0,-1);return s+"…";};
-  const cell=(x,yy,w,h,s,al,bold,bg)=>{if(bg){cx.fillStyle=bg;cx.fillRect(x,yy,w,h);}cx.strokeStyle="#c9ced8";cx.lineWidth=1;cx.strokeRect(x+.5,yy+.5,w,h);
-    cx.fillStyle="#1d2330";cx.font=`${bold?"bold ":""}${fs}px ${FONT}`;cx.textAlign=al==="r"?"right":al==="c"?"center":"left";
-    cx.fillText(clip(s,w-20),al==="r"?x+w-10:al==="c"?x+w/2:x+10,yy+h/2+1);};
-  let x=x0;cols.forEach(([h],i)=>{cell(x,y,W[i],hh,h,"c",true,"#e3eaf7");x+=W[i];});y+=hh;
-  if(!L.all.length){cell(x0,y,tw,rh,"해당 품목이 없습니다","c",false,"#fff");y+=rh;}
-  L.groups.forEach(g=>{const gh=g.rows.length*rh;
-    cell(x0,y,W[0],gh,g.v,"c",true,"#fff");
-    g.rows.forEach((r,j)=>{let xx=x0+W[0];cols.slice(1).forEach(([,k,al],i)=>{cell(xx,y+j*rh,W[i+1],rh,txt(r,k),al,false,r.x?"#fff8e6":"#fff");xx+=W[i+1];});});
-    cx.strokeStyle="#667085";cx.lineWidth=2;cx.beginPath();cx.moveTo(x0,y+1);cx.lineTo(x0+tw,y+1);cx.stroke();
-    y+=gh;});
-  if(noteLines.length){y+=16;cx.fillStyle="#1d2330";cx.font=`14px ${FONT}`;cx.textAlign="left";noteLines.forEach(l=>{cx.fillText(l,x0,y+10);y+=22;});}
+  cx.fillStyle="#fff";cx.fillRect(0,0,Wd,H);cx.textBaseline="middle";
+  const clip=(t,w)=>{if(cx.measureText(t).width<=w)return t;while(t.length&&cx.measureText(t+"…").width>w)t=t.slice(0,-1);return t+"…";};
+  const cell=(x,yy,w,h,t,al,o={})=>{cx.fillStyle=o.bg||"#fff";cx.fillRect(x,yy,w,h);cx.strokeStyle=LINE;cx.lineWidth=1;cx.strokeRect(x+.5,yy+.5,w,h);
+    cx.fillStyle=o.color||"#111";cx.font=`${o.bold?"bold ":""}${fs}px ${FONT}`;cx.textAlign=al==="r"?"right":al==="c"?"center":"left";
+    const ls=String(t).split("\n");ls.forEach((l,k)=>cx.fillText(clip(l,w-16),al==="r"?x+w-9:al==="c"?x+w/2:x+9,yy+h/2+1+(k-(ls.length-1)/2)*(fs+3)));};
+  let y=pad;let x=pad;cols.forEach(([h,,,,hi],i)=>{cell(x,y,W[i],hh,h,"c",{bold:true,bg:hi?PINK:"#fff"});x+=W[i];});y+=hh;
+  if(!L.all.length){cell(pad,y,tw,rh,"해당 품목이 없습니다","c");y+=rh;}
+  L.all.forEach(r=>{let xx=pad;cols.forEach(([h,f,al],i)=>{const v=String(f(r));const o={};
+      if(h==="발주여부"){o.bg=PINK;o.color=RED;}
+      else if(h==="단위"&&v&&!/^EA$/i.test(v)){o.bg=PINK;}
+      else if(r.x){o.bg="#fff8e6";}
+      cell(xx,y,W[i],rh,v,al,o);xx+=W[i];});y+=rh;});
+  if(noteLines.length){y+=14;cx.fillStyle="#111";cx.font=`14px ${FONT}`;cx.textAlign="left";noteLines.forEach(l=>{cx.fillText(l,pad,y+10);y+=22;});}
   return cv;}
 async function copyImage(kind){const cv=drawImage(kind);
   const blob=()=>new Promise(r=>cv.toBlob(r,"image/png"));
