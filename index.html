@@ -9208,8 +9208,8 @@ const kday=s=>/^\d{4}-\d{2}-\d{2}$/.test(s||"")?`${+s.slice(5,7)}월 ${+s.slice(
 const qfmt=q=>q==null||q===""?"":typeof q==="number"?(Math.round(q*100)/100).toLocaleString("ko-KR"):String(q);
 const dfmt=v=>v==null||v===""||!isFinite(v)?"":(Math.round(v*10)/10).toLocaleString("ko-KR");
 const isPick=s=>/픽업/.test(s||"");
-/* 픽업 목록은 익일 입고분만: 월~금은 다음 날, 토요일은 월요일 */
-const nextDay=s=>{if(!/^\d{4}-\d{2}-\d{2}$/.test(s||""))return "";const d=new Date(s+"T00:00:00Z");d.setUTCDate(d.getUTCDate()+(d.getUTCDay()===6?2:1));return d.toISOString().slice(0,10);};
+/* 픽업 목록은 기준일(기본: 내일) 입고분만 */
+const pickDay=s=>s;
 const O={on:false,logs:{},days:{},day:null,tab:"pick",inc:true,q:"",rday:null,err:false,ok:false,busy:false,
   f:{v:"",n:"",q:"",u:"",e:"",m:"",pick:true},del:null};
 
@@ -9277,7 +9277,7 @@ async function saveDay(fn){const day=O.day;const cur=Object.assign({day,extras:[
 /* ---------- 목록 만들기 ---------- */
 function listFor(kind){const log=O.logs[O.day];const dd=O.days[O.day]||{};
   let base=(log&&log.rows||[]).map((r,i)=>Object.assign({},r,{idx:i}));
-  const nd=nextDay(O.day);
+  const nd=pickDay(O.day);
   if(kind==="pick")base=base.filter(r=>isPick(r.s)&&r.e===nd);else if(!O.inc)base=base.filter(r=>norm(r.s)==="완료");
   const ex=(dd.extras||[]).filter(x=>kind!=="pick"||(x.pick&&(x.e||nd)===nd)).map((x,i)=>({x:1,id:x.id,v:x.v||"(업체명 없음)",n:x.n||"",q:numOr(x.q),u:x.u||"",e:x.e||"",m:x.m||"",s:x.pick?"완료(픽업)":"추가 기재",idx:10000+i}));
   const all=base.concat(ex);const order={};all.forEach(r=>{if(order[r.v]===undefined)order[r.v]=Object.keys(order).length;});
@@ -9325,7 +9325,7 @@ function saveImage(kind,cv){cv=cv||drawImage(kind);cv.toBlob(b=>{const a=documen
 
 /* ---------- 화면 ---------- */
 function tableHtml(kind){const L=listFor(kind);
-  if(!L.all.length)return `<div class="ptbl odtbl"><table><tbody><tr><td class="hempty">${O.logs[O.day]?(kind==="pick"?`${kday(nextDay(O.day))} 입고 픽업 품목이 없습니다.`:"해당 품목이 없습니다."):"이 날 올린 수급표가 없습니다. 위에서 엑셀을 올려 주세요."}</td></tr></tbody></table></div>`;
+  if(!L.all.length)return `<div class="ptbl odtbl"><table><tbody><tr><td class="hempty">${O.logs[O.day]?(kind==="pick"?`${kday(pickDay(O.day))} 입고 픽업 품목이 없습니다.`:"해당 품목이 없습니다."):"이 날 올린 수급표가 없습니다. 위에서 엑셀을 올려 주세요."}</td></tr></tbody></table></div>`;
   return `<div class="ptbl odtbl"><table><thead><tr><th>업체명</th><th>품목명</th><th class="r">수량</th><th>단위</th><th>입고예정일</th>${L.memo?"<th>비고</th>":""}${kind==="all"?"<th>발주여부</th>":""}</tr></thead><tbody>
     ${L.groups.map(g=>g.rows.map((r,j)=>`<tr class="${j===0?"first":""}${r.x?" ex":""}">${j===0?`<td class="v" rowspan="${g.rows.length}">${esc(g.v)}</td>`:""}<td>${esc(r.n)}${r.x?' <span class="odtag">추가</span>':""}</td><td class="r num">${esc(qfmt(r.q))}</td><td class="c">${esc(r.u)}</td><td class="c num${r.e?"":" muted"}">${esc(md(r.e)||"미정")}</td>${L.memo?`<td class="small">${esc(r.m||"")}</td>`:""}${kind==="all"?`<td class="c small">${esc(r.x?"추가 기재":r.s)}</td>`:""}</tr>`).join("")).join("")}</tbody></table></div>`;}
 function extraHtml(){const dd=O.days[O.day]||{};const ex=dd.extras||[];const f=O.f;
@@ -9336,7 +9336,7 @@ function extraHtml(){const dd=O.days[O.day]||{};const ex=dd.extras||[];const f=O
       <label class="f odw">품목명<input type="text" id="odN" value="${esc(f.n)}" placeholder="예: 메로나 外 (카톡 발주)"></label>
       <label class="f">수량<input type="text" id="odQ" value="${esc(f.q)}" inputmode="decimal" class="r"></label>
       <label class="f">단위<input type="text" id="odU" value="${esc(f.u)}" placeholder="BX"></label>
-      <label class="f">입고예정일<input type="date" id="odE" value="${esc(f.e||nextDay(O.day)||O.day||"")}"></label>
+      <label class="f">입고예정일<input type="date" id="odE" value="${esc(f.e||pickDay(O.day)||O.day||"")}"></label>
       <label class="f odw">비고<input type="text" id="odM" value="${esc(f.m)}" placeholder="예: 카톡 발주 · 오후 픽업"></label>
       <label class="odchk"><input type="checkbox" id="odP"${f.pick?" checked":""}> 픽업 목록에도 넣기</label>
       <button class="btn primary" type="submit">추가</button></div>
@@ -9381,8 +9381,8 @@ function render(){const root=$("pOrder");if(!root||root.hidden&&!O.on)return;
     </div>
     <div class="odtabs" role="tablist">${[["pick",`픽업 목록 <b>${nPick}</b>`],["all",`발주완료 전체 <b>${nAll}</b>`],["rec","기록"]].map(([k,l])=>`<button type="button" role="tab" data-otab="${k}" aria-selected="${O.tab===k}">${l}</button>`).join("")}</div>
     ${O.tab==="rec"?recHtml():`
-      <div class="acts2 odbar"><h2 class="xtt">${O.tab==="pick"?`${esc(kday(nextDay(O.day)))} 입고 픽업 목록`:`${esc(kday(O.day))} 발주완료 목록`}</h2>
-        ${O.tab==="all"?`<label class="odchk"><input type="checkbox" id="odInc"${O.inc?" checked":""}> ‘완료(픽업)’, ‘완료(택배)’ 등도 포함</label>`:'<span class="muted small">발주여부에 ‘픽업’이 들어간 품목 중 입고예정일이 ${esc(kday(nextDay(O.day)))}인 품목 + 픽업으로 추가한 품목</span>'}
+      <div class="acts2 odbar"><h2 class="xtt">${O.tab==="pick"?`${esc(kday(pickDay(O.day)))} 입고 픽업 목록`:`${esc(kday(O.day))} 발주완료 목록`}</h2>
+        ${O.tab==="all"?`<label class="odchk"><input type="checkbox" id="odInc"${O.inc?" checked":""}> ‘완료(픽업)’, ‘완료(택배)’ 등도 포함</label>`:'<span class="muted small">발주여부에 ‘픽업’이 들어간 품목 중 입고예정일이 ${esc(kday(pickDay(O.day)))}인 품목 + 픽업으로 추가한 품목</span>'}
         <span class="sp"></span><button class="btn" type="button" id="odSave">이미지 저장</button><button class="btn primary" type="button" id="odCopy">이미지로 복사</button></div>
       ${tableHtml(O.tab)}
       ${extraHtml()}`}
@@ -9409,7 +9409,7 @@ function bind(){const root=$("pOrder");
   const p=$("odP");if(p)p.onchange=e=>{O.f.pick=e.target.checked;};
   const add=$("odAdd");if(add)add.onsubmit=e=>{e.preventDefault();const f=O.f;
     if(!f.v.trim()){toast("업체명을 넣어 주세요");$("odV").focus();return;}if(!f.n.trim()){toast("품목명을 넣어 주세요");$("odN").focus();return;}
-    const x={id:"x"+Date.now().toString(36),v:f.v.trim(),n:f.n.trim(),q:f.q.trim(),u:f.u.trim(),e:f.e||nextDay(O.day)||O.day,m:f.m.trim(),pick:!!f.pick,by:me().name||""};
+    const x={id:"x"+Date.now().toString(36),v:f.v.trim(),n:f.n.trim(),q:f.q.trim(),u:f.u.trim(),e:f.e||pickDay(O.day)||O.day,m:f.m.trim(),pick:!!f.pick,by:me().name||""};
     O.f={v:"",n:"",q:"",u:f.u,e:f.e,m:"",pick:f.pick};
     saveDay(d=>{d.extras=(d.extras||[]).concat([x]);return d;}).then(()=>{toast(`${x.v} ${x.n} 추가`);const el=$("odV");if(el)el.focus();});};
   root.querySelectorAll("[data-xdel]").forEach(b=>b.onclick=()=>{O.del=b.dataset.xdel;render();setTimeout(()=>{if(O.del===b.dataset.xdel){O.del=null;render();}},3000);});
