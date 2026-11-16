@@ -5215,8 +5215,7 @@ span.ck{cursor:default}
     const tp = title.match(/(\d{4}\/\d{2}\/\d{2})\s*~\s*(\d{4}\/\d{2}\/\d{2})/);
     // 오션베리: 월마감 구매(오션베리(광주) 창고)·생마차/태토 매장판매는 따로 구분
     if (co === 'macho' && !(forced && forced.role)) {
-      if (role === 'buy' && /오션베리\s*\(광주\)/.test(title)) role = 'buyM';
-      if (role === 'store') { const mc = rows.filter(r => /마초/.test(r.store + ' ' + r.search)).length; if (mc === 0) role = 'storeM'; }
+      // 오션베리도 스웩베리처럼 마감: 구매현황·매장 판매현황은 업체(마초·태토·생마차·참치학교) 구분 없이 한 칸으로 받음
     }
     if (co === 'macho') rows.forEach(r => { r.brand = brandOf(role, r); });
     const span = rs => { const d = rs.map(r => r.date).sort(); const f = d[0], t = d[d.length - 1];
@@ -6022,21 +6021,24 @@ function cmpCodeMap(){
   if(cmpCo==='macho'){ const m=new Map([...oceanSrc()].map(([k,v])=>[k,v.dst||k]));
     for(const it of ((window.ITEMS&&window.ITEMS.list)||[])) if(it.code&&!m.has(it.code)) m.set(it.code,it.code);
     const F=cmpFiles.macho; if(F&&F.fc) for(const r of F.fc.rows) if(!m.has(r.code)) m.set(r.code,r.code);
+    // 같은 코드가 여러 업체 매핑표에 있으면 그 구매 줄의 업체(적요로 판단) 매핑표를 우선
+    const BT={macho:'macho',taeto:'taeto',saeng:'saengmacha',tuna:'tuna'};
+    if(F&&F.buy) for(const r of F.buy.rows){ const T=maps[BT[r.brand]]; const v=T&&T.src.get(r.code); if(v) m.set(r.code,v.dst||r.code); }
     return m; }
   const t = cmpCo==='smartfood' ? maps.smartfood : null; return t ? new Map([...t.src].map(([k,v])=>[k,v.dst||k])) : null; }
 function renderCmp(){
   const F=cmpFiles[cmpCo], P=M.PARTNER[cmpCo], only=$('#cmpOnlyDiff').checked;
   const slotLabel = cmpCo==='macho'
-    ? {buy:'오션 구매현황 (전체)', store:'오션 판매현황 (전체 매장)', fc:'프카 판매현황 (오션베리 전체)', buyM:'오션 구매현황 · 월마감', storeM:'오션 판매현황 · 생마차·태토·참치', ledger:'오션원장'}
+    ? {buy:'오션베리 구매현황', store:'오션베리 판매현황 (매장)', fc:'프카 판매현황 (오션베리)', ledger:'오션원장'}
     : cmpCo==='smartfood' ? {buy:'스마트푸드 입고내역', fc:'프카 판매현황 (스마트푸드)'}
     : {buy:`${P} 구매현황`, store:`${P} 판매현황 (매장)`, fc:'프카 판매현황'};
   const slotHint = cmpCo==='macho'
-    ? {buy:'오션베리 구매현황내역 · 우리가 입력한 구매전표 (마초·태토·생마차·참치학교)', store:'오션베리 판매현황내역 (전체 매장)', fc:'프레시카트 판매현황내역 (오션베리)', buyM:'오션베리 / 오션베리(광주) 구매현황내역 (9월 생마차·태토·참치학교 전표)', storeM:'오션베리 판매현황내역 (생마차·태토·참치학교 매장)', ledger:'거래처에서 받는 오션베리(일배) 원장'}
+    ? {buy:'오션베리 구매현황내역 (마초·태토·생마차·참치학교)', store:'오션베리 판매현황내역 (마초·태토·생마차·참치학교 매장)', fc:'프레시카트 판매현황내역 (오션베리)', ledger:'거래처에서 받는 오션베리(일배) 원장'}
     : cmpCo==='smartfood' ? {buy:'스마트푸드 전산 입고내역 (입고요청일·매출량)', fc:'프레시카트 판매현황내역 (스마트푸드네트웍스)'}
     : {buy:`${P} 구매현황내역`, store:`${P} 판매현황내역`, fc:'프레시카트 판매현황내역'};
   const GROUPS = cmpCo==='macho'
-    ? [{t:'월중 비교 · 오션베리 전체', d:'구매는 우리가 입력 · 월중 아무 때나, 원하는 기간으로 나눠 올려 비교 (예: 1~10일, 11~20일)', roles:['buy','store','fc']},
-       {t:'월마감 · 월말에 올리는 자료', d:'생마차·태토·참치학교 월 전표와 오션원장', roles:['buyM','storeM','ledger']}]
+    ? [{t:'', d:'', roles:['buy','store','fc']},
+       {t:'오션원장 · 월말', d:'마감 방식을 확인할 때까지 기존 방식 그대로 둡니다', roles:['ledger']}]
     : cmpCo==='smartfood' ? [{t:'', d:'', roles:['buy','fc']}]
     : [{t:'', d:'', roles:['buy','store','fc']}];
   const slotHtml = k => { const p=F[k];
@@ -6056,10 +6058,10 @@ function renderCmp(){
   $('#cmpPeriod').textContent='';
   const isO = cmpCo==='macho';
   const hasDaily = F.buy && (F.store || F.fc);
-  const hasMonth = isO && ((F.buyM && F.storeM) || (F.ledger && F.fc));
+  const hasMonth = isO && F.ledger && F.fc;
   if(!hasDaily && !hasMonth){ cmpRes=null; $('#cmpReport').disabled=true;
-    $('#cmpOut').innerHTML=`<div class="note">${any?`비교하려면 짝이 되는 자료가 더 필요합니다. ${isO?'일배는 구매현황 + 매장 판매현황(또는 프카 판매현황), 월마감은 월마감 구매현황 + 생마차·태토 매장 판매현황, 오션원장 + 프카 판매현황이 짝입니다.':P+' 구매현황과 비교할 판매현황을 함께 올려주세요.'}`:`비교할 자료를 올리면 수량·단가·합계 차이를 바로 보여줍니다. ${cmpCo==='smartfood'?'스마트푸드 입고내역과 프카 판매현황 2개를 올리면 일자·품목별로 비교합니다. 품목코드는 스마트푸드 매핑표로 맞추고, 수량은 그대로 비교합니다 (매핑표에 입수량을 넣은 품목만 수량×입수량).':isO?'월중에는 일배(마초·태토 사용분) 자료 3개, 월말에는 월마감 구매현황·생마차/태토 매장 판매현황·오션원장을 더 올리면 업체별로 모두 비교합니다.':'고메는 품목코드를 그대로 비교합니다.'}`}</div>`; return; }
-  // 오션베리 월중 비교: 구매를 우리가 입력하므로 프카 판매현황 전체(마초·태토·생마차·참치학교)와 비교
+    $('#cmpOut').innerHTML=`<div class="note">${any?`비교하려면 짝이 되는 자료가 더 필요합니다. ${isO?'오션베리 구매현황과 비교할 매장 판매현황 또는 프카 판매현황을 함께 올려주세요. 오션원장은 프카 판매현황과 짝입니다.':P+' 구매현황과 비교할 판매현황을 함께 올려주세요.'}`:`비교할 자료를 올리면 수량·단가·합계 차이를 바로 보여줍니다. ${cmpCo==='smartfood'?'스마트푸드 입고내역과 프카 판매현황 2개를 올리면 일자·품목별로 비교합니다. 품목코드는 스마트푸드 매핑표로 맞추고, 수량은 그대로 비교합니다 (매핑표에 입수량을 넣은 품목만 수량×입수량).':isO?'월중에는 일배(마초·태토 사용분) 자료 3개, 월말에는 월마감 구매현황·생마차/태토 매장 판매현황·오션원장을 더 올리면 업체별로 모두 비교합니다.':'고메는 품목코드를 그대로 비교합니다.'}`}</div>`; return; }
+  // 오션베리: 스웩베리처럼 구매 ↔ 매장 판매, 구매 ↔ 프카 판매(마초·태토·생마차·참치학교 전체)
   const Fd = F;
   // 두 자료에 모두 들어 있는 날짜끼리만 합계를 내서 비교
   const pair=(a,b)=>{ if(!Fd[a]||!Fd[b]) return null; const win=mergeRanges(intersect(mergeRanges(cover(Fd[a])),mergeRanges(cover(Fd[b]))));
@@ -6067,11 +6069,10 @@ function renderCmp(){
     return {win, only:{[a]:mergeRanges(cover(Fd[a])), [b]:mergeRanges(cover(Fd[b]))}, res:M.compare({buy:cut(Fd[a]), [b]:cut(Fd[b])}, cmpCodeMap(), cmpPerMap())}; };
   const p1=pair('buy','store'), p2=pair('buy','fc');
   // 월마감 (오션베리): 월 단위·업체별
-  const mon = isO ? (()=>{ const src=F.ledger||F.buyM||F.storeM; if(!src) return ''; const f=ensureFiles(src).files[0]; return f?f.from.slice(0,7):''; })() : '';
+  const mon = isO ? (()=>{ const src=F.ledger; if(!src) return ''; const f=ensureFiles(src).files[0]; return f?f.from.slice(0,7):''; })() : '';
   const inMon = p => p ? p.rows.filter(r=>r.date.slice(0,7)===mon) : [];
   const mapA = (brand, code) => { const t={macho:maps.macho, taeto:maps.taeto, saeng:maps.saengmacha, tuna:maps.tuna}[brand]; if(!t) return code; const m=t.src.get(code); if(m) return m.dst||code; return null; };
-  const SM = F.storeM || (F.store && { rows: F.store.rows.filter(r=>r.brand && r.brand!=='macho') });
-  const m3 = isO && F.buyM && SM && SM.rows.length ? M.compareMonthly(inMon(F.buyM), inMon(SM), null) : null;
+  const m3 = null; // 월마감 구매 ↔ 생마차·태토 매장판매는 ①로 합침
   const mg = mon ? m4MergeFor(mon) : null;
   const m4 = isO && F.ledger && F.fc ? M.compareMonthly(inMon(F.ledger), inMon(F.fc), mapA, mg && mg.fn) : null;
   const R=cmpRes={ s1:p1&&p1.res.s1, s2:p2&&p2.res.s2, p1, p2, m3, m4, mon,
@@ -6082,7 +6083,7 @@ function renderCmp(){
     return `<div class="win ${A!==B?'warn':''}">비교 기간 <strong class="num">${full}</strong>${A!==B?` · ${la} ${A} / ${lb} ${B} → 양쪽에 다 있는 날짜만 비교`:''}</div>`; };
   const fbtn=(k,label,n,u)=>`<li><button type="button" class="fbtn ${cmpFocus===k?'on':''}" data-focus="${k}" ${n?'':'disabled'}><span>${label}</span><span class="num">${fmt(n)}${u}${n?' <span class="go">보기</span>':''}</span></button></li>`;
   let html='<div class="checks">';
-  if(R.s1){ const n=R.s1.detail.length; html+=`<div class="check ${n?'bad':''}"><div class="co-h"><h3>① ${P} 구매 ↔ ${isO?'오션 ':''}매장 판매</h3><span class="pill ${n?'warn':'ok'}">${n?'차이 '+n+'건':'일치'}</span></div>${winNote(R.p1,'구매','매장판매')}
+  if(R.s1){ const n=R.s1.detail.length; html+=`<div class="check ${n?'bad':''}"><div class="co-h"><h3>① ${P} 구매 ↔ 매장 판매</h3><span class="pill ${n?'warn':'ok'}">${n?'차이 '+n+'건':'일치'}</span></div>${winNote(R.p1,'구매','매장판매')}
     <ul><li><span class="muted">수량</span><span class="num">${fmt(R.totals.buy.qty)} ↔ ${fmt(R.totals.store.qty)}</span></li>${fbtn('s1det','일자·품목별 수량 차이',n,'건')}${fbtn('s1days','차이 나는 일자',R.s1.byDate.filter(x=>x.diff).length,'일')}</ul></div>`; }
   if(R.s2){ const iq=R.s2.items.filter(x=>x.dq).length, ip=R.s2.items.filter(x=>x.priceDiff&&x.ap&&x.bp).length, is=R.s2.items.filter(x=>x.dt).length, dd=R.s2.days.filter(x=>x.dq||x.dt).length; const bad=iq||ip||is||dd;
     html+=`<div class="check ${bad?'bad':''}"><div class="co-h"><h3>${cmpCo==='smartfood'?'스마트푸드 입고 ↔ 프카 판매':`② ${P} 구매전표 ↔ 프카 판매전표`}</h3><span class="pill ${bad?'warn':'ok'}">${bad?'확인 필요':'일치'}</span></div>${winNote(R.p2,'구매','프카판매')}
@@ -6090,15 +6091,11 @@ function renderCmp(){
     <li><span class="muted">합계(공급가+부가세)</span><span class="num">${fmt(R.totals.buy2.tot)} ↔ ${fmt(R.totals.fc.tot)}</span></li></ul></div>`; }
   const BL = b => M.BRANDS[b]||b;
   if(isO){
-    if(m3){ const qd=m3.items.filter(x=>x.dq).length, bd=m3.brands.filter(x=>x.dq).length;
-      html+=`<div class="check ${qd?'bad':''}"><div class="co-h"><h3>③ 월마감 · 오션 구매 ↔ 생마차·태토 매장 판매</h3><span class="pill ${qd?'warn':'ok'}">${qd?'차이 '+qd+'개':'일치'}</span></div><div class="win">${mon.replace('/','년 ')}월 · 품목별 수량</div>
-      <ul><li><span class="muted">수량</span><span class="num">${fmt(m3.totals.a.qty)} ↔ ${fmt(m3.totals.b.qty)}</span></li>${fbtn('m3b','업체별 수량 차이',bd,'곳')}${fbtn('m3q','품목별 수량 차이',qd,'개')}</ul></div>`; }
-    else html+=`<div class="check pending"><div class="co-h"><h3>③ 월마감 · 오션 구매 ↔ 생마차·태토 매장 판매</h3><span class="pill idle">월말</span></div><div class="small muted">월마감 구매현황(오션베리(광주))과 생마차·태토·참치학교 매장 판매현황을 올리면 비교합니다.</div></div>`;
     if(m4){ const bd=m4.brands.filter(x=>x.dq||x.dt).length, qd=m4.items.filter(x=>x.dq).length, td=m4.items.filter(x=>x.dt).length, ud=m4.unmapped.length;
-      html+=`<div class="check ${bd||qd||td||ud?'bad':''}"><div class="co-h"><h3>④ 월마감 · 오션원장 ↔ 프카 판매현황</h3><span class="pill ${bd||qd||td||ud?'warn':'ok'}">${bd||qd||td||ud?'확인 필요':'일치'}</span></div><div class="win">${mon.replace('/','년 ')}월 · 업체별·품목별 (원장 코드는 업체별 매핑표로 바꿔 비교)</div>
+      html+=`<div class="check ${bd||qd||td||ud?'bad':''}"><div class="co-h"><h3>월말 · 오션원장 ↔ 프카 판매현황</h3><span class="pill ${bd||qd||td||ud?'warn':'ok'}">${bd||qd||td||ud?'확인 필요':'일치'}</span></div><div class="win">${mon.replace('/','년 ')}월 · 업체별·품목별 (원장 코드는 업체별 매핑표로 바꿔 비교)</div>
       <ul>${fbtn('m4b','업체별 합계 차이',bd,'곳')}${fbtn('m4q','품목별 수량 차이',qd,'개')}${fbtn('m4t','품목별 합계 차이',td,'개')}${fbtn('m4u','매핑표에 없는 원장 코드',ud,'개')}
       <li><span class="muted">합계(공급가+부가세)</span><span class="num">${fmt(m4.totals.a.tot)} ↔ ${fmt(m4.totals.b.tot)}</span></li></ul></div>`; }
-    else html+=`<div class="check pending"><div class="co-h"><h3>④ 월마감 · 오션원장 ↔ 프카 판매현황</h3><span class="pill idle">월말</span></div><div class="small muted">거래처에서 받은 오션원장과 프카 판매현황(오션베리 전체)을 올리면 업체별로 비교합니다.</div></div>`;
+    else html+=`<div class="check pending"><div class="co-h"><h3>월말 · 오션원장 ↔ 프카 판매현황</h3><span class="pill idle">월말</span></div><div class="small muted">거래처에서 받은 오션원장과 프카 판매현황(오션베리 전체)을 올리면 업체별로 비교합니다.</div></div>`;
   }
   html+='</div>';
   const COL={
@@ -6133,10 +6130,10 @@ function renderCmp(){
   const FOCUS={
     m3b:()=>m3&&['③ 업체별 수량 차이',MCOL.m3b,m3.brands.filter(x=>x.dq)],
     m3q:()=>m3&&['③ 품목별 수량 차이',MCOL.m3i,m3.items.filter(x=>x.dq),OPT.m3],
-    m4b:()=>m4&&['④ 업체별 합계 차이',MCOL.m4b,m4.brands.filter(x=>x.dq||x.dt)],
-    m4q:()=>m4&&['④ 품목별 수량 차이',MCOL.m4i,m4.items.filter(x=>x.dq),OPT.m4],
-    m4t:()=>m4&&['④ 품목별 합계 차이',MCOL.m4i,m4.items.filter(x=>x.dt),OPT.m4],
-    m4u:()=>m4&&['④ 매핑표에 없는 원장 코드',MCOL.m4u,m4.unmapped],
+    m4b:()=>m4&&['오션원장 · 업체별 합계 차이',MCOL.m4b,m4.brands.filter(x=>x.dq||x.dt)],
+    m4q:()=>m4&&['오션원장 · 품목별 수량 차이',MCOL.m4i,m4.items.filter(x=>x.dq),OPT.m4],
+    m4t:()=>m4&&['오션원장 · 품목별 합계 차이',MCOL.m4i,m4.items.filter(x=>x.dt),OPT.m4],
+    m4u:()=>m4&&['오션원장 · 매핑표에 없는 원장 코드',MCOL.m4u,m4.unmapped],
     s1det:()=>R.s1&&['① 일자·품목별 수량 차이',COL.s1det,R.s1.detail],
     s1days:()=>R.s1&&['① 차이 나는 일자',COL.s1days,R.s1.byDate.filter(x=>x.diff)],
     qty:()=>R.s2&&['② 품목별 수량 차이',COL.items,R.s2.items.filter(x=>x.dq),OPT.items],
@@ -6162,7 +6159,7 @@ function renderCmp(){
   }
   if(R.s2){
     const det=R.s2.detail;
-    html+=`<section class="sec"><div class="sec-h"><h2>${cmpCo==='smartfood'?'스마트푸드 입고 ↔ 프카 판매':'② 구매전표 ↔ 프카 판매전표'}</h2><p class="small muted">${cmpCo==='macho'?'구매 품목코드를 업체별 매핑(마초·태토·생마차·참치학교)으로 바꿔 비교 · 자사 품목코드는 그대로':cmpCo==='smartfood'?'스마트푸드 코드를 스마트푸드 매핑으로 바꿔 비교 · 수량 그대로':'품목코드 그대로 비교'} · 차이 = 프카판매 − ${cmpCo==='smartfood'?'스마트푸드 입고':'구매'}</p></div>`;
+    html+=`<section class="sec"><div class="sec-h"><h2>${cmpCo==='smartfood'?'스마트푸드 입고 ↔ 프카 판매':'② 구매전표 ↔ 프카 판매전표'}</h2><p class="small muted">${cmpCo==='macho'?'구매 품목코드를 업체별(마초·태토·생마차·참치학교) 매핑표로 자사코드에 맞춰 비교':cmpCo==='smartfood'?'스마트푸드 코드를 스마트푸드 매핑으로 바꿔 비교 · 수량 그대로':'품목코드 그대로 비교'} · 차이 = 프카판매 − ${cmpCo==='smartfood'?'스마트푸드 입고':'구매'}</p></div>`;
     if(R.s2.unmapped.length){ const tb=cmpCo==='smartfood'?'smartfood':'macho';
       const bOf=new Map(); if(isO&&F.buy) for(const r of F.buy.rows) if(!bOf.has(r.code)) bOf.set(r.code,r.brand||'macho');
       const tOf=u=>isO?({macho:'macho',taeto:'taeto',saeng:'saengmacha',tuna:'tuna'}[bOf.get(u.code)]||'macho'):tb;
@@ -6184,7 +6181,7 @@ function renderCmp(){
   }
   if(m4){
     const its=only?m4.items.filter(x=>x.dq||x.dt):m4.items;
-    html+=`<section class="sec"><div class="sec-h"><h2>④ 월마감 · 오션원장 ↔ 프카 판매현황</h2><p class="small muted">${mon.replace('/','년 ')}월 · 원장 코드를 업체별 매핑표로 바꿔 비교 · 차이 = 프카 − 원장</p></div>`;
+    html+=`<section class="sec"><div class="sec-h"><h2>월말 · 오션원장 ↔ 프카 판매현황</h2><p class="small muted">${mon.replace('/','년 ')}월 · 원장 코드를 업체별 매핑표로 바꿔 비교 · 차이 = 프카 − 원장</p></div>`;
     if(m4.unmapped.length) html+=m4MapHtml(m4.unmapped);
     html+=m4MergeHtml(mon,m4);
     html+=`<h3 class="small muted">업체별 수량 · 합계</h3>`+tbl(MCOL.m4b,m4.brands,r=>r.dq||r.dt)+
@@ -6212,9 +6209,9 @@ $('#cmpReport').onclick=()=>{
   const BLx=b=>M.BRANDS[b]||b;
   if(R.m3){ sheet('③월마감_업체별',['업체','구매 수량','매장판매 수량','수량 차이'],R.m3.brands.map(r=>[r.label,r.aq,r.bq,r.dq]));
     sheet('③월마감_품목별',['업체','품목코드','품명','구매 수량','매장판매 수량','수량 차이'],R.m3.items.map(r=>[BLx(r.brand),r.key,r.name,r.aq,r.bq,r.dq])); }
-  if(R.m4){ sheet('④원장_업체별',['업체','원장 줄','원장 수량','원장 합계','프카 줄','프카 수량','프카 합계','수량 차이','합계 차이'],R.m4.brands.map(r=>[r.label,r.an,r.aq,r.at,r.bn,r.bq,r.bt,r.dq,r.dt]));
-    sheet('④원장_품목별',['업체','프카코드','원장코드','품명','원장 수량','프카 수량','수량 차이','원장 단가','프카 단가','원장 합계','프카 합계','합계 차이'],R.m4.items.map(r=>[BLx(r.brand),r.key,r.src,r.name,r.aq,r.bq,r.dq,r.ap,r.bp,r.at,r.bt,r.dt]));
-    if(R.m4.unmapped.length) sheet('④매핑없음',['업체','원장코드','품명'],R.m4.unmapped.map(u=>[BLx(u.brand),u.code,u.name])); }
+  if(R.m4){ sheet('원장_업체별',['업체','원장 줄','원장 수량','원장 합계','프카 줄','프카 수량','프카 합계','수량 차이','합계 차이'],R.m4.brands.map(r=>[r.label,r.an,r.aq,r.at,r.bn,r.bq,r.bt,r.dq,r.dt]));
+    sheet('원장_품목별',['업체','프카코드','원장코드','품명','원장 수량','프카 수량','수량 차이','원장 단가','프카 단가','원장 합계','프카 합계','합계 차이'],R.m4.items.map(r=>[BLx(r.brand),r.key,r.src,r.name,r.aq,r.bq,r.dq,r.ap,r.bp,r.at,r.bt,r.dt]));
+    if(R.m4.unmapped.length) sheet('원장_매핑없음',['업체','원장코드','품명'],R.m4.unmapped.map(u=>[BLx(u.brand),u.code,u.name])); }
   const W=(R.p2||R.p1)?(R.p2||R.p1).win:[], per=W.length?W[0].from.slice(5).replace('/','')+'-'+W[W.length-1].to.slice(5).replace('/',''):(R.mon?R.mon.replace('/','.'):'');
   save(`${M.CO_LABEL[cmpCo]}_마감비교_${per}.xlsx`, new Blob([XLSX.write(wb,{bookType:'xlsx',type:'array'})]));
 };
