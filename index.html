@@ -5231,7 +5231,7 @@ span.ck{cursor:default}
         return Object.assign({ role, co: keys[0], rows: parts[keys[0]], split, unknown: keys.length > 1 && parts.unknown ? parts.unknown.length : 0 }, span(parts[keys[0]]));
       }
     }
-    return Object.assign({ role, co, rows }, span(rows));
+    return Object.assign({ role, co, rows, title }, span(rows));
   }
 
   const add = (m, k, f) => { const o = m.get(k) || f(); m.set(k, o); return o; };
@@ -5906,16 +5906,27 @@ function ensureFiles(p){ if(!p.files){ const pr=p.period||{from:p.from,to:p.to};
 function cover(p){ return ensureFiles(p).files.map(f=>({from:f.from,to:f.to})).sort((a,b)=>a.from.localeCompare(b.from)); }
 function intersect(A,B){ const out=[]; for(const a of A) for(const b of B){ const f=a.from>b.from?a.from:b.from, t=a.to<b.to?a.to:b.to; if(f<=t) out.push({from:f,to:t}); } return out.sort((x,y)=>x.from.localeCompare(y.from)); }
 const inR = (d,rs) => rs.some(r=>d>=r.from&&d<=r.to);
+/* 오션베리는 마초 / 태토·생마차·참치학교 자료를 따로 받으므로 같은 칸에서도 업체 묶음별로 교체 */
+const OGL={macho:'마초', other:'태토·생마차·참치'};
+function oceanGrp(q, name){
+  const t=(name||'')+' '+(q.title||'');
+  if(/태토|토마토|생마차|참치/.test(t)) return 'other';
+  if(/마초/.test(t)) return 'macho';
+  const n=q.rows.filter(r=>r.brand&&r.brand!=='macho').length; return n*2>q.rows.length?'other':'macho';
+}
 /* 같은 자리에 새 파일: 새 파일 기간의 기존 자료만 바꾸고 나머지 기간은 그대로 둠 (다른 달 자료는 정리) */
-function mergeSlot(old, q, name){
+function mergeSlot(old, q, name, co){
   const pf=q.period.from, pt=q.period.to, month=pf.slice(0,7);
-  const nf={name, from:pf, to:pt, lines:q.rows.length, at:Date.now()};
+  const grp = co==='macho' && q.role!=='fc' && q.role!=='ledger' ? oceanGrp(q, name) : null;
+  if(grp) q.rows.forEach(r=>{ r.grp=grp; });
+  const nf={name, from:pf, to:pt, lines:q.rows.length, at:Date.now(), grp};
   if(!old) return {merged:Object.assign({}, q, {files:[nf], file:name}), replaced:0, kept:0};
   ensureFiles(old);
-  const keepRows=old.rows.filter(r=>r.date.slice(0,7)===month && (r.date<pf || r.date>pt));
+  const same = r => !grp || !r.grp || r.grp===grp;
+  const keepRows=old.rows.filter(r=>r.date.slice(0,7)===month && (r.date<pf || r.date>pt || !same(r)));
   const files=[];
   for(const f of old.files){ if(f.from.slice(0,7)!==month && f.to.slice(0,7)!==month) continue;
-    if(f.to<pf || f.from>pt){ files.push(f); continue; }
+    if(f.to<pf || f.from>pt || (grp && f.grp && f.grp!==grp)){ files.push(f); continue; }
     if(f.from<pf) files.push(Object.assign({},f,{to:dShift(pf,-1)}));
     if(f.to>pt) files.push(Object.assign({},f,{from:dShift(pt,1)})); }
   files.push(nf); files.sort((a,b)=>a.from.localeCompare(b.from));
@@ -5940,7 +5951,7 @@ async function addCmp(list, forced){
       for(const q of parts){
         const co=(p.split?q.co:((forced&&forced.co)||p.co||cmpCo));
         if(!q.period) q.period={from:q.from,to:q.to};
-        const {merged, replaced, kept}=mergeSlot(cmpFiles[co][q.role], q, f.name);
+        const {merged, replaced, kept}=mergeSlot(cmpFiles[co][q.role], q, f.name, co);
         merged.at=new Date(); cmpFiles[co][q.role]=merged; lastCo=lastCo||co; if(co===cmpCo||parts.length===1) lastCo=co; cmpFresh.add(q.role); persistSlot(co,q.role,merged);
         const rng=`${md(q.period.from)}~${md(q.period.to)}`;
         done.push(`${p.split?M.CO_LABEL[co]+' ':''}${co==='smartfood'&&q.role==='buy'?'스마트푸드 입고내역':M.ROLES[q.role].label} ${rng} ${replaced?'교체':'추가'} (${f.name}, ${q.rows.length}줄${kept?` · 다른 기간 ${kept}줄 유지`:''})`);
@@ -6033,7 +6044,7 @@ function renderCmp(){
     : cmpCo==='smartfood' ? {buy:'스마트푸드 입고내역', fc:'프카 판매현황 (스마트푸드)'}
     : {buy:`${P} 구매현황`, store:`${P} 판매현황 (매장)`, fc:'프카 판매현황'};
   const slotHint = cmpCo==='macho'
-    ? {buy:'오션베리 구매현황내역 (마초·태토·생마차·참치학교)', store:'오션베리 판매현황내역 (마초·태토·생마차·참치학교 매장)', fc:'프레시카트 판매현황내역 (오션베리)', ledger:'거래처에서 받는 오션베리(일배) 원장'}
+    ? {buy:'오션베리 구매현황내역 2개 · 마초 / 태토·생마차·참치학교 (같은 칸에 하나씩 올리면 둘 다 들어갑니다)', store:'오션베리 판매현황내역 2개 · 마초 매장 / 태토·생마차·참치학교 매장', fc:'프레시카트 판매현황내역 (오션베리)', ledger:'거래처에서 받는 오션베리(일배) 원장'}
     : cmpCo==='smartfood' ? {buy:'스마트푸드 전산 입고내역 (입고요청일·매출량)', fc:'프레시카트 판매현황내역 (스마트푸드네트웍스)'}
     : {buy:`${P} 구매현황내역`, store:`${P} 판매현황내역`, fc:'프레시카트 판매현황내역'};
   const GROUPS = cmpCo==='macho'
@@ -6042,16 +6053,17 @@ function renderCmp(){
     : cmpCo==='smartfood' ? [{t:'', d:'', roles:['buy','fc']}]
     : [{t:'', d:'', roles:['buy','store','fc']}];
   const slotHtml = k => { const p=F[k];
-    const up=`<label class="btn sm" for="slotIn-${k}">${p?'이 자료만 다시 올리기':'파일 올리기'}</label><input type="file" id="slotIn-${k}" data-slot="${k}" accept=".xlsx,.xls" hidden>`;
+    const up=`<label class="btn sm" for="slotIn-${k}">${p?'이 자료만 다시 올리기':'파일 올리기'}</label><input type="file" id="slotIn-${k}" data-slot="${k}" accept=".xlsx,.xls" ${cmpCo==='macho'&&(k==='buy'||k==='store')?'multiple':''} hidden>`;
     if(!p) return `<div class="slot empty"><div class="slot-h"><h3>${slotLabel[k]}</h3><span class="pill idle">없음</span></div><div class="fn">${esc(slotHint[k])}</div><div class="actions">${up}</div></div>`;
     const t={qty:p.rows.reduce((a,r)=>a+r.qty,0), sup:p.rows.reduce((a,r)=>a+r.sup,0), vat:p.rows.reduce((a,r)=>a+r.vat,0)};
     const tm=p.at?String(p.at.getHours()).padStart(2,'0')+':'+String(p.at.getMinutes()).padStart(2,'0'):'';
     return `<div class="slot ${cmpFresh.has(k)?'fresh':''}"><div class="slot-h"><h3>${slotLabel[k]}</h3><span class="small muted">${cmpFresh.has(k)?'방금 반영':''} ${tm}</span><button class="x" data-rmslot="${k}" aria-label="빼기">×</button></div>
-      <ul class="flist">${ensureFiles(p).files.map(f=>`<li><span class="num">${f.from===f.to?md(f.from):md(f.from)+'~'+md(f.to)}</span><span class="fn">${esc(f.name)}</span></li>`).join('')}</ul><dl class="stats"><dt>들어 있는 기간</dt><dd>${rangeTxt(intersect(cover(p),cover(p)).length?mergeRanges(cover(p)):[])}</dd><dt>수량</dt><dd>${fmt(t.qty)}</dd><dt>공급가액</dt><dd>${fmt(t.sup)}</dd><dt>부가세</dt><dd>${fmt(t.vat)}</dd><dt>합계</dt><dd>${fmt(t.sup+t.vat)}</dd></dl><div class="actions">${up}</div></div>`;
+      <ul class="flist">${ensureFiles(p).files.map(f=>`<li><span class="num">${f.from===f.to?md(f.from):md(f.from)+'~'+md(f.to)}</span>${f.grp?`<span class="pill idle">${OGL[f.grp]}</span>`:''}<span class="fn">${esc(f.name)}</span></li>`).join('')}</ul>${
+        cmpCo==='macho'&&(k==='buy'||k==='store')?(()=>{ const g=new Set(p.files.map(f=>f.grp).filter(Boolean)); const miss=['macho','other'].filter(x=>!g.has(x)); return g.size&&miss.length?`<div class="small" style="color:var(--warn,#a8701a)">${miss.map(x=>OGL[x]).join(', ')} 자료가 아직 없습니다</div>`:''; })():''}<dl class="stats"><dt>들어 있는 기간</dt><dd>${rangeTxt(intersect(cover(p),cover(p)).length?mergeRanges(cover(p)):[])}</dd><dt>수량</dt><dd>${fmt(t.qty)}</dd><dt>공급가액</dt><dd>${fmt(t.sup)}</dd><dt>부가세</dt><dd>${fmt(t.vat)}</dd><dt>합계</dt><dd>${fmt(t.sup+t.vat)}</dd></dl><div class="actions">${up}</div></div>`;
   };
   $('#slots').innerHTML=GROUPS.map(g=>`${g.t?`<div class="slot-group"><strong>${g.t}</strong><span class="small muted">${g.d}</span></div>`:''}${g.roles.map(slotHtml).join('')}`).join('');
   $('#slots').querySelectorAll('[data-rmslot]').forEach(b=>b.onclick=()=>{ const k=b.dataset.rmslot; unpersistSlot(cmpCo,k); delete cmpFiles[cmpCo][k]; cmpMsg=null; renderCmp(); });
-  $('#slots').querySelectorAll('input[data-slot]').forEach(inp=>inp.addEventListener('change',()=>{ const fl=[...inp.files]; inp.value=''; if(fl.length) addCmp(fl.slice(0,1), {role:inp.dataset.slot, co:cmpCo}); }));
+  $('#slots').querySelectorAll('input[data-slot]').forEach(inp=>inp.addEventListener('change',()=>{ const fl=[...inp.files]; inp.value=''; if(fl.length) addCmp(fl.slice(0, cmpCo==='macho'?2:1), {role:inp.dataset.slot, co:cmpCo}); }));
   const mb=$('#cmpMsg'); if(!cmpMsg){ mb.hidden=true; } else { mb.hidden=false; mb.className='note'+(cmpMsg.errs.length?' warn':' okmsg');
     mb.innerHTML=[...cmpMsg.errs.map(esc), ...cmpMsg.done.map(t=>esc(t)+' · 다시 비교했습니다')].join('<br>'); }
   const any=Object.keys(F).length;
