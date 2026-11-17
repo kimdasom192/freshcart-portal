@@ -85,7 +85,11 @@ service cloud.firestore {
     match /codeChanges/{d} { allow read, write: if isAdmin(); }
 
     // 시제 관리: 시제 관리 권한이 있는 사람끼리 함께 기록
-    match /pettyCash/{d} { allow read, write: if hasAny(['cash']); }
+    // 시제: 시제 메뉴가 있는 사람은 보기만, 기록·수정·삭제는 최초 관리자(김다솜) 계정만
+    match /pettyCash/{d} {
+      allow read: if hasAny(['cash']);
+      allow write: if request.auth != null && request.auth.uid == 'TYzS4lm9ndcw7YmctkWoYHQCf4B3';
+    }
 
     // 소비기한 점검 자료(품목·현장 입력·올린 재고/입고 자료): 소비기한 점검 권한이 있는 사람 모두 함께 보고 고침
     match /expiryShared/{d} { allow read, write: if hasAny(['expiry']); }

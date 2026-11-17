@@ -8885,19 +8885,21 @@ function sorted(){return C.list.slice().sort((a,b)=>(a.date||"").localeCompare(b
 function withBal(){let bal=0;return sorted().map(r=>{bal+=(r.kind==="in"?1:-1)*(+r.amt||0);return Object.assign({},r,{bal});});}
 function init(){if(C.on)return;C.on=true;
   try{col().onSnapshot(s=>{C.ok=true;C.err=false;C.list=s.docs.map(d=>Object.assign({id:d.id},d.data()));render();},()=>{C.err=true;render();});}catch(e){C.err=true;}}
-async function add(){const f=C.f;const a=num(f.amt);
+/* 시제는 관리자(김다솜) 계정만 기록·수정, 다른 사람은 보기만 */
+const canEditCash=()=>{const F=window.FC||{};const u=(F.auth&&F.auth.currentUser&&F.auth.currentUser.uid)||(F.profile&&F.profile.uid);return !!u&&u===F.ADMIN_UID;};
+async function add(){if(!canEditCash())return;const f=C.f;const a=num(f.amt);
   if(!f.date){toast("날짜를 넣어 주세요");return;}if(!f.desc.trim()){toast("사용내역을 넣어 주세요");$("csDesc")&&$("csDesc").focus();return;}
   if(!(a>0)){toast("금액을 숫자로 넣어 주세요");$("csAmt")&&$("csAmt").focus();return;}
   const rec={date:f.date,desc:f.desc.trim(),amt:a,kind:f.kind==="in"?"in":"out",memo:(f.memo||"").trim(),by:me().name||"",uid:me().uid||"",at:Date.now()};
   try{await col().doc().set(rec);}catch(e){toast(e&&(e.code==="not_granted"||e.code==="permission-denied")?"저장 권한이 없습니다. 보안 규칙(pettyCash)을 확인해 주세요":"저장하지 못했습니다");return;}
   C.f={date:f.date,desc:"",amt:"",kind:f.kind,memo:""};toast(`${rec.desc} ${won(a)}원 ${rec.kind==="in"?"입금":"출금"} 기록`);render();setTimeout(()=>{const d=$("csDesc");if(d)d.focus();},30);}
-async function saveEdit(id){const r=C.list.find(x=>x.id===id);if(!r)return;const g=k=>$(`cse-${k}`);
+async function saveEdit(id){if(!canEditCash())return;const r=C.list.find(x=>x.id===id);if(!r)return;const g=k=>$(`cse-${k}`);
   const a=num(g("amt").value);if(!(a>0)){toast("금액을 숫자로 넣어 주세요");return;}
   const up=Object.assign({},r,{date:g("date").value||r.date,desc:g("desc").value.trim()||r.desc,amt:a,kind:g("kind").value,memo:g("memo").value.trim(),editedBy:me().name||"",editedAt:Date.now()});delete up.id;
   try{await col().doc(id).set(up);C.edit=null;toast("고쳤습니다");}catch(e){toast("고치지 못했습니다");}}
-async function del(id){try{await col().doc(id).delete();C.del=null;toast("기록을 지웠습니다");}catch(e){toast("지우지 못했습니다");}}
+async function del(id){if(!canEditCash())return;try{await col().doc(id).delete();C.del=null;toast("기록을 지웠습니다");}catch(e){toast("지우지 못했습니다");}}
 
-function render(){const root=$("pCash");if(!root||root.hidden&&!C.on)return;
+function render(){const root=$("pCash");if(!root||root.hidden&&!C.on)return;const ed=canEditCash();
   const act=document.activeElement&&document.activeElement.id;
   const all=withBal();const bal=all.length?all[all.length-1].bal:0;
   const mons=[...new Set(all.map(r=>(r.date||"").slice(0,7)).filter(Boolean))].sort().reverse();
@@ -8914,7 +8916,7 @@ function render(){const root=$("pCash");if(!root||root.hidden&&!C.on)return;
       <div><span>${C.mon==="all"?"전체 기간":esc(+C.mon.slice(0,4)+"년 "+(+C.mon.slice(5))+"월")} 입금</span><b class="in">+${won(sumIn)}</b></div>
       <div><span>${C.mon==="all"?"전체 기간":"이 달"} 출금</span><b class="out">−${won(sumOut)}</b></div>
       ${C.mon!=="all"?`<div><span>이 달 시작 잔액</span><b>${won(monStart)}</b></div>`:""}</div>
-    <form class="panel2 csadd" id="csAdd" autocomplete="off"><h2>기록 추가</h2>
+    ${ed?`<form class="panel2 csadd" id="csAdd" autocomplete="off"><h2>기록 추가</h2>
       <div class="csform">
         <label class="f">날짜<input type="date" id="csDate" value="${esc(f.date)}"></label>
         <label class="f csw">사용내역<input type="text" id="csDesc" value="${esc(f.desc)}" placeholder="예: 식대초과분, 퀵 발송비" list="csDescs"></label>
@@ -8924,7 +8926,7 @@ function render(){const root=$("pCash");if(!root||root.hidden&&!C.on)return;
         <label class="f csw">비고 (선택)<input type="text" id="csMemo" value="${esc(f.memo)}" placeholder="영수증 번호, 청구처 등"></label>
         <button class="btn primary" type="submit">기록</button>
       </div>
-      <p class="muted small" style="margin:6px 0 0">${num(f.amt)>0?`기록하면 잔액이 <b>${won(bal)}원 → ${won(bal+(f.kind==="in"?1:-1)*num(f.amt))}원</b>이 됩니다. (오늘 이후 날짜 기록 기준)`:"Enter를 누르면 바로 기록됩니다."}</p></form>
+      <p class="muted small" style="margin:6px 0 0">${num(f.amt)>0?`기록하면 잔액이 <b>${won(bal)}원 → ${won(bal+(f.kind==="in"?1:-1)*num(f.amt))}원</b>이 됩니다. (오늘 이후 날짜 기록 기준)`:"Enter를 누르면 바로 기록됩니다."}</p></form>`:`<p class="panel2 muted small" style="margin:0">보기 전용입니다. 시제 기록 추가·수정은 담당자만 할 수 있습니다.</p>`}
     <div class="acts2 csbar"><h2 class="xtt">시제 장부 <span class="muted">${rows.length}건</span></h2><span class="sp"></span>
       <input type="search" id="csQ" class="sel" placeholder="사용내역 찾기" value="${esc(C.q)}" style="width:180px">
       <select id="csMon" class="sel" aria-label="달"><option value="all"${C.mon==="all"?" selected":""}>전체 기간</option>${mons.map(m=>`<option value="${m}"${m===C.mon?" selected":""}>${+m.slice(0,4)}년 ${+m.slice(5)}월</option>`).join("")}</select>
@@ -8934,7 +8936,7 @@ function render(){const root=$("pCash");if(!root||root.hidden&&!C.on)return;
         <td class="num">${esc(r.date)}</td><td><b>${esc(r.desc)}</b></td><td class="r num ${r.kind==="in"?"in":"out"}">${r.kind==="in"?"+":"−"}${won(r.amt)}</td>
         <td><span class="cspill ${r.kind==="in"?"in":"out"}">${r.kind==="in"?"입금":"출금"}</span></td><td class="r num"><b>${won(r.bal)}</b></td>
         <td class="small">${esc(r.memo||"")}</td><td class="small muted">${esc(r.by||"")}</td>
-        <td class="csact"><button type="button" class="btn sm" data-edit="${esc(r.id)}">고치기</button>${C.del===r.id?`<button type="button" class="btn sm danger" data-delok="${esc(r.id)}">삭제?</button>`:`<button type="button" class="x" data-del="${esc(r.id)}" aria-label="기록 삭제">×</button>`}</td></tr>`).join("")
+        <td class="csact">${ed?`<button type="button" class="btn sm" data-edit="${esc(r.id)}">고치기</button>${C.del===r.id?`<button type="button" class="btn sm danger" data-delok="${esc(r.id)}">삭제?</button>`:`<button type="button" class="x" data-del="${esc(r.id)}" aria-label="기록 삭제">×</button>`}`:""}</td></tr>`).join("")
         :`<tr><td colspan="8" class="hempty">${C.ok?"기록이 없습니다.":"불러오는 중입니다…"}</td></tr>`}</tbody></table></div>
     <p class="muted small">잔액은 날짜 순서대로 입금은 더하고 출금은 빼서 계산합니다. 같은 날 기록은 입력한 순서대로 계산합니다.</p>
   </div>`;
@@ -8947,7 +8949,7 @@ function editRow(r){return `<tr class="csedit"><td><input type="date" id="cse-da
 function bind(){const root=$("pCash");
   const keep=(id,k)=>{const el=$(id);if(el)el.addEventListener("input",()=>{C.f[k]=el.value;if(k==="amt"){const p=root.querySelector(".csadd p");if(p){const a=num(el.value);const bal=(withBal().slice(-1)[0]||{bal:0}).bal;p.innerHTML=a>0?`기록하면 잔액이 <b>${won(bal)}원 → ${won(bal+(C.f.kind==="in"?1:-1)*a)}원</b>이 됩니다. (오늘 이후 날짜 기록 기준)`:"Enter를 누르면 바로 기록됩니다.";}}});};
   keep("csDate","date");keep("csDesc","desc");keep("csAmt","amt");keep("csMemo","memo");
-  $("csAdd").onsubmit=e=>{e.preventDefault();add();};
+  const fm=$("csAdd");if(fm)fm.onsubmit=e=>{e.preventDefault();add();};
   root.querySelectorAll("[data-kind]").forEach(b=>b.onclick=()=>{C.f.kind=b.dataset.kind;render();});
   $("csMon").onchange=e=>{C.mon=e.target.value;render();};
   $("csQ").oninput=e=>{C.q=e.target.value;render();};
