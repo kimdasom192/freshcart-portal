@@ -5415,6 +5415,8 @@ span.ck{cursor:default}
     const secTot = secs.map(s => { const t = { 냉동: 0, 냉장: 0, 실온: 0, total: 0 }; s.cars.forEach(g => g.stores.forEach(x => TEMPS.concat('total').forEach(k => t[k] += x[k]))); return t; });
     // 지방 고메 매장별 합계 (영남·호남)
     const localGourmet = secs[2].cars.filter(g => /영남|호남/.test(g.car)).flatMap(g => g.stores.filter(x => /고메/.test(x.name)).map(x => ({ car: g.car, name: x.name, total: x.total })));
+    // 고메 광명점은 수도권 호차지만 3시 마감이라 영호남 고메와 함께 표시
+    secs[0].cars.concat(secs[1].cars).forEach(g => g.stores.filter(x => /고메/.test(x.name) && /광명/.test(x.name)).forEach(x => localGourmet.push({ car: g.car, name: x.name, total: x.total })));
     // 1~16호·별도차량 배송 매장 (한옥집 인천T1·T2·김포공항 제외)
     const EXCL = /인천\s*T1|인천\s*T2|김포공항/i;
     const metroStores = [...secs[0].cars, ...secs[1].cars].flatMap(g => g.stores.filter(x => x.total > 0 && !EXCL.test(x.name)).map(x => ({ car: g.car, name: x.name, total: x.total, brand: brandOf(x.name) })));
