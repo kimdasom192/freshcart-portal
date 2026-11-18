@@ -303,6 +303,12 @@ button,input,select{font:inherit;color:inherit}
 .paper td.r small{display:block;font-size:9.5px;color:var(--paper-muted);font-weight:400}
 /* 받은 견적 */
 .qtop{display:flex;gap:4px;margin:0 0 14px;border-bottom:1px solid var(--line)}
+.qcalc1{display:flex;flex-wrap:wrap;gap:10px 14px;align-items:flex-end;margin:0 0 14px;padding:12px 14px}
+.qcalc1 .qc1t{flex:0 0 100%;font-size:13px;color:var(--ink)}
+.qcalc1 .f{display:flex;flex-direction:column;gap:5px;font-size:12px;font-weight:600;color:var(--muted);flex:0 1 130px;min-width:96px}
+.qcalc1 input,.qcalc1 select{padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:var(--surface);font:inherit;font-size:14px;color:var(--ink);min-width:0;width:100%}
+.qcalc1 .qc1r{flex:1 1 220px;padding-bottom:9px}
+.qcalc1 .btn{margin-bottom:2px}
 .qtop button{border:0;background:none;padding:10px 18px;font:inherit;font-size:15px;font-weight:700;color:var(--muted);border-bottom:3px solid transparent;margin-bottom:-1px;cursor:pointer}
 .qtop button[aria-selected="true"]{color:var(--forest);border-bottom-color:var(--forest)}
 .rqdrop{padding:14px 10px!important;text-align:center}.rqdrop.over{border-color:var(--forest);background:var(--forest-soft)}
@@ -8371,6 +8377,14 @@ function shell(){
   $("pQuote").innerHTML=`<div class="page qpage">
     <div class="page-h"><small>견적서 권한</small><h1>견적서</h1>
       <p>품목 정보를 한 번 입력하면 대표님 보고용과 거래처 전달용이 함께 만들어집니다. 품목마다 어느 쪽에 넣을지 고를 수 있고, 타겟가를 넣으면 타겟가 기준 마진율과 차이를 비교합니다.</p></div>
+    <div class="panel2 qcalc1" aria-label="빠른 마진율 계산"><b class="qc1t">빠른 마진율 계산</b>
+      <label class="f">매입가<input type="text" id="qcCost" inputmode="numeric" class="num r" placeholder="0"></label>
+      <label class="f">매입가 VAT<select id="qcVat"><option value="별도">별도</option><option value="포함">포함 (÷1.1)</option><option value="면세">면세</option></select></label>
+      <label class="f">마진율 (%)<input type="text" id="qcRate" inputmode="decimal" class="num r" placeholder="0.0"></label>
+      <label class="f">매출가 (VAT 별도)<input type="text" id="qcSale" inputmode="numeric" class="num r" placeholder="0"></label>
+      <label class="f">올림<select id="qcRound"><option value="1">1원</option><option value="10" selected>10원</option><option value="100">100원</option></select></label>
+      <span class="qc1r muted small" id="qcOut">매입가와 마진율 또는 매출가를 넣으면 나머지가 계산됩니다.</span>
+      <button class="btn sm" type="button" id="qcClear">지우기</button></div>
     <div class="qtop" role="tablist" aria-label="견적서 종류"><button type="button" role="tab" data-top="send" aria-selected="true">보내는 견적서</button><button type="button" role="tab" data-top="recv" aria-selected="false">받은 견적</button></div>
     <div id="qRecv" hidden></div>
     <div class="qgrid" id="qSend">
@@ -8382,6 +8396,20 @@ function shell(){
       </aside>
       <div class="qmain" id="qMain"></div>
     </div></div>`;
+  /* 빠른 마진율 계산: 매출가를 넣으면 마진율, 마진율을 넣으면 매출가 */
+  (()=>{const g=id=>$(id),n=v=>{const x=parseFloat(String(v).replace(/[^\d.\-]/g,""));return isFinite(x)?x:null;};let by="rate";
+    const cost=()=>{const c=n(g("qcCost").value);return c==null?null:(g("qcVat").value==="포함"?c/1.1:c);};
+    const out=()=>{const c=cost(),sl=n(g("qcSale").value);const o=g("qcOut");
+      if(c==null||sl==null||!sl){o.textContent="매입가와 마진율 또는 매출가를 넣으면 나머지가 계산됩니다.";return;}
+      o.innerHTML=`실 매입가 <b class="num">${Math.round(c).toLocaleString("ko-KR")}</b>원 · 마진액 <b class="num">${Math.round(sl-c).toLocaleString("ko-KR")}</b>원`;};
+    const fromRate=()=>{const c=cost(),m=n(g("qcRate").value);if(c==null||m==null||m>=100){out();return;}const u=+g("qcRound").value;const raw=c/(1-m/100);
+      const v=u>1?Math.ceil(raw/u-1e-9)*u:Math.round(raw);g("qcSale").value=v.toLocaleString("ko-KR");out();};
+    const fromSale=()=>{const c=cost(),sl=n(g("qcSale").value);if(c==null||!sl){out();return;}g("qcRate").value=((sl-c)/sl*100).toFixed(1);out();};
+    const re=()=>by==="rate"?fromRate():fromSale();
+    g("qcRate").oninput=()=>{by="rate";fromRate();};g("qcSale").oninput=()=>{by="sale";fromSale();};
+    g("qcCost").oninput=re;g("qcVat").onchange=re;g("qcRound").onchange=()=>{if(by==="rate")fromRate();};
+    ["qcCost","qcSale"].forEach(id=>g(id).addEventListener("blur",()=>{const x=n(g(id).value);if(x!=null)g(id).value=x.toLocaleString("ko-KR");}));
+    g("qcClear").onclick=()=>{["qcCost","qcRate","qcSale"].forEach(id=>g(id).value="");by="rate";out();g("qcCost").focus();};})();
   $("qNew").onclick=()=>{flush();Q.cur=blankQuote(Q.cf);Q.tab="items";Q.delAsk=false;render();save(true);setTimeout(()=>{const c=$("qClient");if(c)c.focus();},50);};
   $("qFind").oninput=e=>{Q.q=e.target.value.trim();renderList();};
   document.querySelectorAll("#pQuote [data-top]").forEach(b=>b.onclick=()=>{setTop(b.dataset.top);});
