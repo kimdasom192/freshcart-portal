@@ -5358,7 +5358,12 @@ span.ck{cursor:default}
   const brandOf = s => { const t = str(s); if (/^\[한옥집\]/.test(t)) return '한옥집'; if (/^\[숙성도\]/.test(t)) return '숙성도'; if (/고메/.test(t)) return '고메'; if (/마초/.test(t)) return '마초'; if (/토마토|태토/.test(t)) return '태토'; if (/생마차/.test(t)) return '생마차'; if (/오므온/.test(t)) return '오므온'; if (/영등포/.test(t)) return '영등포'; if (/참치/.test(t)) return '참치학교'; return t.split(/[(\s]/)[0] || '기타'; };
   const toYmd = s => { const m = str(s).match(/(\d{2,4})[./-](\d{1,2})[./-](\d{1,2})/); if (!m) return ''; const y = m[1].length === 2 ? '20' + m[1] : m[1]; return `${y}-${String(m[2]).padStart(2, '0')}-${String(m[3]).padStart(2, '0')}`; };
   /* 파일명 앞 날짜: 261031_… → 2026-10-31 */
-  function nameDate(name) { const m = str(name).match(/(?:^|[^\d])(\d{2})(\d{2})(\d{2})(?!\d)/) || str(name).match(/^(\d{2})(\d{2})(\d{2})/); if (!m) return ''; const mo = +m[2], d = +m[3]; if (mo < 1 || mo > 12 || d < 1 || d > 31) return ''; return `20${m[1]}-${m[2]}-${m[3]}`; }
+  /* 파일명 날짜: 20261121 · 261121 · 1121 모두 같은 날로 인식 (4자리는 파일 안 날짜나 올해의 연도) */
+  function nameDate(name, ref) { const t = str(name); const ok = (mo, d) => mo >= 1 && mo <= 12 && d >= 1 && d <= 31;
+    let m = t.match(/(?:^|[^\d])(20\d{2})(\d{2})(\d{2})(?!\d)/); if (m && ok(+m[2], +m[3])) return `${m[1]}-${m[2]}-${m[3]}`;
+    m = t.match(/(?:^|[^\d])(\d{2})(\d{2})(\d{2})(?!\d)/) || t.match(/^(\d{2})(\d{2})(\d{2})/); if (m && ok(+m[2], +m[3])) return `20${m[1]}-${m[2]}-${m[3]}`;
+    m = t.match(/(?:^|[^\d])(\d{2})(\d{2})(?!\d)/); if (m && ok(+m[1], +m[2])) { const y = /^\d{4}/.test(ref || '') ? ref.slice(0, 4) : String(new Date().getFullYear()); return `${y}-${m[1]}-${m[2]}`; }
+    return ''; }
 
   /* 시트 하나 해석 → {kind, rows:[{store,temp,sup,car,date}]} */
   function parseSheet(aoa) {
@@ -5392,7 +5397,7 @@ span.ck{cursor:default}
     const agg = [...m.values()].map(o => [o.store, o.temp, Math.round(o.sup), o.car, o.n]);
     const brands = [...new Set(rows.map(r => brandOf(r.store)))];
     const cars = [...new Set(rows.map(r => normCar(r.car)).filter(Boolean))];
-    return { kind: parsed.kind, nameDate: nameDate(fileName), innerDate: dates[0] || '', otherDates: dates.slice(1), lines: rows.length, total: Math.round(rows.reduce((a, r) => a + r.sup, 0)), agg, brands, cars };
+    return { kind: parsed.kind, nameDate: nameDate(fileName, dates[0]), innerDate: dates[0] || '', otherDates: dates.slice(1), lines: rows.length, total: Math.round(rows.reduce((a, r) => a + r.sup, 0)), agg, brands, cars };
   }
 
   /* 매장 목록(설정) + 파일들 → 화면·엑셀용 집계 */
