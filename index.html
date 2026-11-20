@@ -5729,7 +5729,8 @@ function buildOmuon(){
 }
 // 파일명: 업로드 일자(월~금 다음날, 토요일은 월요일) + 업체명  예) 1102_한옥집.xlsx
 const upTag = () => { const d=upDate(); return String(d.getMonth()+1).padStart(2,'0')+String(d.getDate()).padStart(2,'0'); };
-const fname = co => `${upTag()}_${C.COS[co].fileTag}.xlsx`;
+/* 오므온은 일일배송에 그대로 올리므로 연도까지 (예: 261121) */
+const fname = co => `${co==='omuon'?String(upDate().getFullYear()).slice(2):''}${upTag()}_${C.COS[co].fileTag}.xlsx`;
 async function save(filename,data){
   if(!downloads){ showDl('이 화면에서는 파일 저장이 막혀 있습니다. claude.ai에서 이 페이지를 열어 주세요.'); return; }
   try{ await downloads.save({filename,data}); toast(filename+' 저장됨'); }
